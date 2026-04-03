@@ -1,7 +1,5 @@
 # V2bX
 
-[![](https://img.shields.io/badge/TgChat-%E4%BA%A4%E6%B5%81%E7%BE%A4-blue)](https://t.me/YuzukiProjects)
-
 A V2board node server based on multi core, modified from XrayR.  
 一个基于多种内核的V2board节点服务端，修改自XrayR，支持V2ay,Trojan,Shadowsocks协议。
 
@@ -50,7 +48,7 @@ A V2board node server based on multi core, modified from XrayR.
 ### 一键安装
 
 ```
-wget -N https://raw.githubusercontents.com/InazumaV/V2bX-script/master/install.sh && bash install.sh
+wget -N https://raw.githubusercontent.com/pupmme/pupmsub/v2bx-script/script/install.sh && bash install.sh
 ```
 
 ### 手动安装
@@ -85,4 +83,4 @@ go build -o V2bX -ldflags '-s -w' -gcflags="all=-trimpath=${PWD}" -asmflags="all
 
 ## Stars 增长记录
 
-[![Stargazers over time](https://starchart.cc/InazumaV/V2bX.svg)](https://starchart.cc/InazumaV/V2bX)
+[![Stargazers over time](https://starchart.cc/pupmme/pupmsub.svg)](https://starchart.cc/pupmme/pupmsub)
