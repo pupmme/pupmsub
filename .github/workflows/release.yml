@@ -2,6 +2,11 @@ name: Build and Release
 
 on:
   workflow_dispatch:
+    inputs:
+      release_id:
+        description: 'Release ID to upload to'
+        required: false
+        type: string
   push:
     branches:
       - master
@@ -19,6 +24,9 @@ on:
       - ".github/workflows/*.yml"
   release:
     types: [published]
+
+permissions:
+  contents: write
 
 jobs:
 
