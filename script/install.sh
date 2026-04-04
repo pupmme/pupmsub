@@ -1,368 +1,279 @@
 #!/bin/bash
 
+# ============================================
+# pupmsub 安装脚本
+# ============================================
+
 red='\033[0;31m'
 green='\033[0;32m'
 yellow='\033[0;33m'
+cyan='\033[0;36m'
+bcyan='\033[1;36m'
 plain='\033[0m'
 
-cur_dir=$(pwd)
+NAME="sub"
+BINARY_NAME="V2bX"
+BIN_DIR="/usr/local/${BINARY_NAME}"
+CFG_DIR="/etc/${BINARY_NAME}"
+BIN_PATH="${BIN_DIR}/${BINARY_NAME}"
+CMD_PATH="/usr/bin/${NAME}"
+CMD_V2BX="/usr/bin/${BINARY_NAME}"
+SERVICE_PATH="/etc/systemd/system/${BINARY_NAME}.service"
 
-# check root
-[[ $EUID -ne 0 ]] && echo -e "${red}错误：${plain} 必须使用root用户运行此脚本！\n" && exit 1
+# 检测 root
+[[ $EUID -ne 0 ]] && echo -e "${red}错误：${plain} 必须使用 root 用户运行此脚本！\n" && exit 1
 
-# check os
-if [[ -f /etc/redhat-release ]]; then
-    release="centos"
-elif cat /etc/issue | grep -Eqi "debian"; then
-    release="debian"
-elif cat /etc/issue | grep -Eqi "ubuntu"; then
-    release="ubuntu"
-elif cat /etc/issue | grep -Eqi "centos|red hat|redhat|rocky|alma|oracle linux"; then
-    release="centos"
-elif cat /proc/version | grep -Eqi "debian"; then
-    release="debian"
-elif cat /proc/version | grep -Eqi "ubuntu"; then
-    release="ubuntu"
-elif cat /proc/version | grep -Eqi "centos|red hat|redhat|rocky|alma|oracle linux"; then
-    release="centos"
-else
-    echo -e "${red}未检测到系统版本，请联系脚本作者！${plain}" && exit 1
-fi
-
-# check arch
+# 检测架构
 arch=$(arch)
-if [[ ${arch} == "x86_64" ]]; then
-    arch="64"
-elif [[ ${arch} == "aarch64" ]]; then
-    arch="arm64-v8a"
-elif [[ ${arch} == "s390x" ]]; then
-    arch="s390x"
-else
-    arch="64"
-fi
+case ${arch} in
+    x86_64)  arch="64" ;;
+    aarch64) arch="arm64-v8a" ;;
+    s390x)   arch="s390x" ;;
+    *)       arch="64" ;;
+esac
 
-before_show_menu() {
-    echo ""
-    echo -e "${green}按回车返回主菜单${plain}"
-    read -s
-}
+# 颜色输出
+info()    { echo -e "${green}[INFO]${plain} $*"; }
+warn()    { echo -e "${yellow}[WARN]${plain} $*"; }
+error()   { echo -e "${red}[ERROR]${plain} $*"; }
+success() { echo -e "${green}[OK]${plain} $*"; }
 
-confirm() {
-    if [[ $# -gt 1 ]]; then
-        echo && read -rp "$1 [默认 $2]: " yn
-        [[ -z ${yn} ]] && yn=$2
+# ============================================
+# 系统检测
+# ============================================
+detect_os() {
+    if [[ -f /etc/redhat-release ]]; then
+        os="centos"
+    elif cat /etc/issue | grep -Eqi "debian"; then
+        os="debian"
+    elif cat /etc/issue | grep -Eqi "ubuntu"; then
+        os="ubuntu"
+    elif cat /proc/version | grep -Eqi "centos|red hat|redhat"; then
+        os="centos"
+    elif cat /proc/version | grep -Eqi "debian"; then
+        os="debian"
+    elif cat /proc/version | grep -Eqi "ubuntu"; then
+        os="ubuntu"
     else
-        read -rp "$1 [y/n]: " -y yn
-    fi
-    [[ ! ${yn} == [yY] ]] && return 1 || return 0
-}
-
-install_base() {
-    if [[ x"${release}" == x"centos" ]]; then
-        yum install epel-release -y
-        yum install wget curl unzip tar crontabs socat -y
-        yum install ca-certificates wget -y
-        update-ca-trust force-enable
-    else
-        apt-get update -y
-        apt-get install wget curl unzip tar cron socat -y
-        apt-get install ca-certificates wget -y
-        update-ca-certificates
-    fi
-}
-
-# 0: running, 1: not running, 2: not installed
-check_status() {
-    if [[ ! -f /etc/systemd/system/V2bX.service ]]; then
-        return 2
-    fi
-    temp=$(systemctl status V2bX | grep Active | awk '{print $3}' | cut -d "(" -f2 | cut -d ")" -f1)
-    if [[ x"${temp}" == x"running" ]]; then
-        return 0
-    else
-        return 1
-    fi
-}
-
-check_install() {
-    if [[ ! -f /etc/systemd/system/V2bX.service ]]; then
-        echo -e "${red}V2bX 未安装，请先安装！${plain}"
-        return 1
-    fi
-    return 0
-}
-
-check_uninstall() {
-    if [[ -f /etc/systemd/system/V2bX.service ]]; then
-        echo -e "${red}V2bX 已安装，请先卸载！${plain}"
-        return 1
-    fi
-    return 0
-}
-
-check_enabled() {
-    systemctl is-enabled V2bX.service >/dev/null 2>&1 && return 0 || return 1
-}
-
-install_V2bX() {
-    if [[ -e /usr/local/V2bX/ ]]; then
-        rm -rf /usr/local/V2bX/
-    fi
-
-    mkdir /usr/local/V2bX/ -p
-    cd /usr/local/V2bX/
-
-    base_url="https://github.com/pupmme/pupmsub/releases/download/v1.0.0"
-    zip_name="V2bX-linux-${arch}.zip"
-    dl_url="${base_url}/${zip_name}"
-
-    echo -e "开始下载 pupmsub v1.0.0..."
-    curl -L -f --connect-timeout 30 --retry 3 \
-        -o /usr/local/V2bX/V2bX-linux.zip \
-        "${dl_url}"
-    if [[ $? -ne 0 ]]; then
-        echo -e "${red}下载失败，请确保服务器能访问 GitHub${plain}"
-        echo "尝试手动下载: ${dl_url}"
+        error "不支持的操作系统"
         exit 1
     fi
+    info "检测到系统: ${os}"
+}
 
-    unzip -o V2bX-linux.zip
-    rm -f V2bX-linux.zip
-    chmod +x V2bX
+# ============================================
+# 安装基础依赖
+# ============================================
+install_base() {
+    info "安装基础依赖..."
+    if [[ ${os} == "centos" ]]; then
+        yum install epel-release -y -q
+        yum install wget curl unzip tar crontabs socat jq -y -q
+    else
+        apt-get update -y -qq
+        apt-get install wget curl unzip tar cron socat jq -y -qq
+    fi
+    success "基础依赖安装完成"
+}
 
-    mkdir -p /etc/V2bX/
+# ============================================
+# 下载 pupmsub 二进制
+# ============================================
+download_binary() {
+    local dl_url="https://github.com/pupmme/pupmsub/releases/download/v1.0.0/V2bX-linux-${arch}.zip"
+    info "下载 pupmsub v1.0.0..."
+    mkdir -p "${BIN_DIR}"
+    if ! curl -L -f --connect-timeout 30 --retry 3 -o "${BIN_DIR}/pupmsub.zip" "${dl_url}"; then
+        error "二进制下载失败，请检查网络（需访问 GitHub）"
+        info "手动下载: ${dl_url}"
+        exit 1
+    fi
+    unzip -o "${BIN_DIR}/pupmsub.zip" -d "${BIN_DIR}/"
+    rm -f "${BIN_DIR}/pupmsub.zip"
+    chmod +x "${BIN_PATH}"
+    success "二进制安装完成 (${BIN_DIR})"
+}
 
-    # 下载 systemd service
-    curl -fsL --connect-timeout 15 -o /etc/systemd/system/V2bX.service \
-        "https://raw.githubusercontent.com/pupmme/pupmsub/v2bx-script/script/V2bX.service"
+# ============================================
+# 下载配置文件模板
+# ============================================
+download_configs() {
+    info "下载配置文件..."
+    mkdir -p "${CFG_DIR}"
+    local cfg_base="https://raw.githubusercontent.com/pupmme/pupmsub/v2bx-script/script/config"
+    curl -fsL --connect-timeout 15 -o "${CFG_DIR}/config.yml"          "${cfg_base}/config.yml"          || warn "config.yml 下载失败"
+    curl -fsL --connect-timeout 15 -o "${CFG_DIR}/dns.json"           "${cfg_base}/dns.json"           || warn "dns.json 下载失败"
+    curl -fsL --connect-timeout 15 -o "${CFG_DIR}/route.json"         "${cfg_base}/route.json"         || warn "route.json 下载失败"
+    curl -fsL --connect-timeout 15 -o "${CFG_DIR}/custom_inbound.json"  "${cfg_base}/custom_inbound.json"  || warn "custom_inbound.json 下载失败"
+    curl -fsL --connect-timeout 15 -o "${CFG_DIR}/custom_outbound.json" "${cfg_base}/custom_outbound.json" || warn "custom_outbound.json 下载失败"
+    # geo 文件
+    curl -fsL --connect-timeout 60 \
+        -o "${CFG_DIR}/geoip.dat" \
+        "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat" || warn "geoip.dat 下载失败"
+    curl -fsL --connect-timeout 60 \
+        -o "${CFG_DIR}/geosite.dat" \
+        "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat" || warn "geosite.dat 下载失败"
+    success "配置文件下载完成"
+}
+
+# ============================================
+# 写入 systemd service
+# ============================================
+write_service() {
+    cat > "${SERVICE_PATH}" <<EOF
+[Unit]
+Description=${BINARY_NAME} Service
+After=network.target Network-Writing systemd
+Wants=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=${CFG_DIR}
+ExecStart=${BIN_PATH} run -c ${CFG_DIR}/config.yml
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
     systemctl daemon-reload
-    systemctl stop V2bX 2>/dev/null || true
-    systemctl enable V2bX
+    info "systemd service 已写入"
+}
 
-    echo -e "${green}pupmsub v1.0.0 安装完成，已设置开机自启${plain}"
+# ============================================
+# 安装管理脚本（菜单）
+# ============================================
+install_menu_script() {
+    info "安装管理脚本..."
+    local menu_url="https://raw.githubusercontent.com/pupmme/pupmsub/v2bx-script/script/sub.sh"
+    curl -fsL --connect-timeout 15 -o "${CMD_PATH}" "${menu_url}"
+    chmod +x "${CMD_PATH}"
+    # 兼容旧命令名
+    [[ ! -f "${CMD_V2BX}" ]] && ln -sf "${CMD_PATH}" "${CMD_V2BX}"
+    [[ ! -L /usr/bin/sub ]] && ln -sf "${CMD_PATH}" /usr/bin/sub
+    success "管理命令已安装: sub"
+}
 
-    # 下载配置文件
-    cfg_base="https://raw.githubusercontent.com/pupmme/pupmsub/v2bx-script/script/config"
-    curl -fsL --connect-timeout 15 -o /etc/V2bX/config.yml          "${cfg_base}/config.yml"
-    curl -fsL --connect-timeout 15 -o /etc/V2bX/dns.json         "${cfg_base}/dns.json"
-    curl -fsL --connect-timeout 15 -o /etc/V2bX/route.json         "${cfg_base}/route.json"
-    curl -fsL --connect-timeout 15 -o /etc/V2bX/custom_inbound.json   "${cfg_base}/custom_inbound.json"
-    curl -fsL --connect-timeout 15 -o /etc/V2bX/custom_outbound.json  "${cfg_base}/custom_outbound.json"
+# ============================================
+# 首次安装交互配置
+# ============================================
+init_config() {
+    echo ""
+    echo -e "${bcyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+    echo -e "${bcyan}     pupmsub 首次安装 - 节点配置向导${plain}"
+    echo -e "${bcyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+    echo ""
 
-    # 下载 geo 文件
-    curl -fsL --connect-timeout 30 \
-        -o /etc/V2bX/geoip.dat \
-        "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat"
-    curl -fsL --connect-timeout 30 \
-        -o /etc/V2bX/geosite.dat \
-        "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat"
+    # 面板地址
+    read -rp "请输入面板网址 (例如 https://s.pupm.us): " panel_url
+    [[ -z ${panel_url} ]] && { error "面板地址不能为空"; exit 1; }
 
-    # 安装管理脚本
-    curl -fsL --connect-timeout 15 -o /usr/bin/V2bX \
-        "https://raw.githubusercontent.com/pupmme/pupmsub/v2bx-script/script/V2bX.sh"
-    chmod +x /usr/bin/V2bX
-    if [[ ! -L /usr/bin/v2bx ]]; then
-        ln -s /usr/bin/V2bX /usr/bin/v2bx
+    # API Key
+    read -rp "请输入 API Key: " api_key
+    [[ -z ${api_key} ]] && { error "API Key 不能为空"; exit 1; }
+
+    # 是否固定面板地址
+    fix_panel="n"
+    read -rp "是否固定面板地址和 Key 到配置？(y/n，默认 n): " fix_panel
+    [[ -z ${fix_panel} ]] && fix_panel="n"
+
+    # Node ID
+    echo ""
+    echo -e "${yellow}请输入节点 Node ID（支持多个，逗号分隔）:${plain}"
+    read -rp "例如: 1,2,3 或单个 ID: " node_ids
+    [[ -z ${node_ids} ]] && { error "Node ID 不能为空"; exit 1; }
+
+    # 生成 config.yml
+    cat > "${CFG_DIR}/config.yml" <<EOF
+Log:
+  Level: info
+  Output: /var/log/${BINARY_NAME}.log
+DnsConfigPath: ${CFG_DIR}/dns.json
+RouteConfigPath: ${CFG_DIR}/route.json
+InboundConfigPath: ${CFG_DIR}/custom_inbound.json
+OutboundConfigPath: ${CFG_DIR}/custom_outbound.json
+AutoUpdateCron: "0 */6 * * *"
+UpdateURL: ${panel_url}
+Key: ${api_key}
+EOF
+
+    if [[ "${fix_panel}" == [yY] ]]; then
+        sed -i "s|UpdateURL:.*|UpdateURL: ${panel_url}|" "${CFG_DIR}/config.yml"
+        sed -i "s|Key:.*|Key: ${api_key}|" "${CFG_DIR}/config.yml"
     fi
 
-    if [[ ! -f /etc/V2bX/config.json ]] && [[ ! -f /etc/V2bX/config.yml ]]; then
-        echo ""
-        echo -e "${yellow}全新安装，请先参看教程配置必要内容${plain}"
-        echo -e "配置文档: https://github.com/pupmme/pupmsub"
-        first_install=true
-    else
-        systemctl start V2bX
-        sleep 2
-        check_status
-        echo ""
-        if [[ $? == 0 ]]; then
-            echo -e "${green}V2bX 重启成功${plain}"
+    # 生成节点配置（逗号分隔的多个 ID）
+    IFS=',' read -ra NODE_ARRAY <<< "${node_ids}"
+    first_node=true
+    for nid in "${NODE_ARRAY[@]}"; do
+        nid=$(echo "${nid}" | tr -d ' ')
+        [[ -z ${nid} ]] && continue
+        if ${first_node}; then
+            cat > "${CFG_DIR}/node.yml" <<EOF
+Nodes:
+  - NodeID: ${nid}
+EOF
+            first_node=false
         else
-            echo -e "${red}V2bX 可能启动失败，请稍后使用 ${green}V2bX log${red} 查看日志${plain}"
+            echo "  - NodeID: ${nid}" >> "${CFG_DIR}/node.yml"
+        fi
+    done
+
+    echo ""
+    success "配置文件已生成"
+    echo -e "  配置目录: ${green}${CFG_DIR}${plain}"
+    echo -e "  管理命令: ${green}sub${plain}"
+}
+
+# ============================================
+# 启动服务
+# ============================================
+start_service() {
+    systemctl enable ${BINARY_NAME}
+    systemctl stop ${BINARY_NAME} 2>/dev/null || true
+    sleep 1
+    if systemctl start ${BINARY_NAME}; then
+        sleep 2
+        if systemctl is-active --quiet ${BINARY_NAME}; then
+            success "pupmsub 已启动并设置开机自启"
+            return 0
         fi
     fi
-
-    echo ""
-    echo "=========================================="
-    echo " pupmsub 管理命令:"
-    echo "  V2bX              - 显示管理菜单"
-    echo "  V2bX start        - 启动"
-    echo "  V2bX stop         - 停止"
-    echo "  V2bX restart      - 重启"
-    echo "  V2bX status       - 状态"
-    echo "  V2bX log          - 日志"
-    echo "  V2bX enable       - 开机自启"
-    echo "  V2bX disable      - 取消自启"
-    echo "=========================================="
+    warn "pupmsub 可能启动失败，请稍后使用 ${green}sub log${plain} 查看日志"
+    return 1
 }
 
-start() {
-    systemctl start V2bX
-    if [[ $? == 0 ]]; then
-        echo -e "${green}V2bX 启动成功${plain}"
-    else
-        echo -e "${red}V2bX 启动失败，请查看日志${plain}"
-    fi
-}
-
-stop() {
-    systemctl stop V2bX
-    if [[ $? == 0 ]]; then
-        echo -e "${green}V2bX 已停止${plain}"
-    else
-        echo -e "${red}V2bX 停止失败${plain}"
-    fi
-}
-
-restart() {
-    systemctl restart V2bX
-    if [[ $? == 0 ]]; then
-        echo -e "${green}V2bX 重启成功${plain}"
-    else
-        echo -e "${red}V2bX 重启失败，请查看日志${plain}"
-    fi
-}
-
-show_log() {
-    journalctl -u V2bX -o cat --no-pager -n 50
-}
-
-show_V2bX_version() {
-    /usr/local/V2bX/V2bX version
-}
-
-enable() {
-    systemctl enable V2bX
-    if [[ $? == 0 ]]; then
-        echo -e "${green}V2bX 已设置开机自启${plain}"
-    else
-        echo -e "${red}设置开机自启失败${plain}"
-    fi
-}
-
-disable() {
-    systemctl disable V2bX
-    if [[ $? == 0 ]]; then
-        echo -e "${green}V2bX 已取消开机自启${plain}"
-    else
-        echo -e "${red}取消开机自启失败${plain}"
-    fi
-}
-
-update() {
-    bash <(curl -Ls https://raw.githubusercontent.com/pupmme/pupmsub/v2bx-script/script/install.sh)
-}
-
-uninstall() {
-    confirm "确定要卸载 pupmsub 吗?" "n"
-    if [[ $? != 0 ]]; then
-        return 0
-    fi
-    systemctl stop V2bX
-    systemctl disable V2bX
-    rm -f /etc/systemd/system/V2bX.service
-    systemctl daemon-reload
-    systemctl reset-failed
-    rm -rf /etc/V2bX/
-    rm -rf /usr/local/V2bX/
-    rm -f /usr/bin/V2bX
-    rm -f /usr/bin/v2bx
-    echo ""
-    echo -e "${green}卸载完成${plain}"
-}
-
-show_menu() {
-    echo -e "
-  ${green}pupmsub 后端管理脚本${plain}
---- https://github.com/pupmme/pupmsub ---
-  ${green}0.${plain} 修改配置
-————————————————
-  ${green}1.${plain} 安装 pupmsub
-  ${green}2.${plain} 更新 pupmsub
-  ${green}3.${plain} 卸载 pupmsub
-————————————————
-  ${green}4.${plain} 启动
-  ${green}5.${plain} 停止
-  ${green}6.${plain} 重启
-  ${green}7.${plain} 查看状态
-  ${green}8.${plain} 查看日志
-————————————————
-  ${green}9.${plain} 设置开机自启
-  ${green}10.${plain} 取消开机自启
-————————————————
-  ${green}11.${plain} 一键安装 bbr
-  ${green}12.${plain} 查看版本
-  ${green}13.${plain} 生成 X25519 密钥
-  ${green}14.${plain} 升级管理脚本
-  ${green}15.${plain} 生成配置文件
-  ${green}16.${plain} 放行所有端口
-————————————————
-  ${green}17.${plain} 退出
-"
-    show_status
-    echo
-    read -rp "请输入选择 [0-17]: " num
-    case "${num}" in
-        0) config ;;
-        1) check_uninstall && install ;;
-        2) check_install && update ;;
-        3) check_install && uninstall ;;
-        4) check_install && start ;;
-        5) check_install && stop ;;
-        6) check_install && restart ;;
-        7) check_install && show_status ;;
-        8) check_install && show_log ;;
-        9) check_install && enable ;;
-        10) check_install && disable ;;
-        11) bash <(curl -sL https://raw.githubusercontent.com/tc-holyun/Google-BBR/master/bbr.sh) ;;
-        12) check_install && show_V2bX_version ;;
-        13) check_install && /usr/local/V2bX/V2bX x25519 ;;
-        14) update ;;
-        15) check_install && /usr/local/V2bX/V2bX generate ;;
-        16) iptables -F && iptables -P INPUT ACCEPT && iptables -P FORWARD ACCEPT && iptables -P OUTPUT ACCEPT && echo -e "${green}已放行所有端口${plain}" ;;
-        17) exit 0 ;;
-        *) echo -e "${red}请输入正确的数字 [0-17]${plain}" ;;
-    esac
-    [[ ${num} != "17" ]] && before_show_menu && show_menu
-}
-
-config() {
-    echo "修改配置后会自动尝试重启"
-    nano /etc/V2bX/config.yml
-    sleep 2
-    check_status
-    case $? in
-        0) echo -e "V2bX状态: ${green}已运行${plain}" ;;
-        1) echo -e "检测到未启动或启动失败，是否查看日志？[Y/n]"
-           read -rp "(默认: y): " yn
-           [[ -z ${yn} ]] && yn="y"
-           [[ ${yn} == [Yy] ]] && show_log ;;
-        2) echo -e "V2bX状态: ${red}未安装${plain}" ;;
-    esac
-}
-
-install() {
+# ============================================
+# 安装主流程
+# ============================================
+do_install() {
+    detect_os
     install_base
-    install_V2bX
+    download_binary
+    download_configs
+    write_service
+    install_menu_script
+    init_config
+    start_service
+
+    echo ""
+    echo -e "${bcyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+    echo -e "${green}  pupmsub 安装完成！${plain}"
+    echo -e "${bcyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${plain}"
+    echo ""
+    echo -e "  ${green}管理命令: sub${plain}"
+    echo ""
+    echo "  sub              - 管理菜单"
+    echo "  sub start        - 启动"
+    echo "  sub stop         - 停止"
+    echo "  sub restart      - 重启"
+    echo "  sub status       - 状态"
+    echo "  sub log          - 日志"
+    echo "  sub enable       - 开机自启"
+    echo "  sub disable      - 取消自启"
+    echo ""
 }
 
-show_status() {
-    check_status
-    case $? in
-        0) echo -e "V2bX状态: ${green}已运行${plain}"; show_enable_status ;;
-        1) echo -e "V2bX状态: ${yellow}未运行${plain}"; show_enable_status ;;
-        2) echo -e "V2bX状态: ${red}未安装${plain}" ;;
-    esac
-}
-
-show_enable_status() {
-    check_enabled
-    if [[ $? == 0 ]]; then
-        echo -e "是否开机自启: ${green}是${plain}"
-    else
-        echo -e "是否开机自启: ${red}否${plain}"
-    fi
-}
-
-before_show_menu
-show_menu
+do_install
