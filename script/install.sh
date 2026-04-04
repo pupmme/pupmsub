@@ -80,8 +80,8 @@ install_base() {
 # 下载 pupmsub 二进制
 # ============================================
 download_binary() {
-    local dl_url="https://github.com/pupmme/pupmsub/releases/download/v1.0.1/sub-linux-${arch}"
-    info "下载 pupmsub v1.0.0 (${arch})..."
+    local dl_url="https://github.com/pupmme/pupmsub/releases/download/v1.0.1/linux-${arch}"
+    info "下载 pupmsub v1.0.1 (${arch})..."
     mkdir -p "${BIN_DIR}"
     if ! curl -L -f --connect-timeout 60 --retry 3 -o "${BIN_DIR}/sub" "${dl_url}"; then
         error "二进制下载失败，请检查网络（需访问 GitHub）"
