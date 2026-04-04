@@ -21,7 +21,7 @@ var (
 
 var serverCommand = cobra.Command{
 	Use:   "server",
-	Short: "Run V2bX server",
+	Short: "Run sub server",
 	Run:   serverHandle,
 	Args:  cobra.NoArgs,
 }
@@ -29,7 +29,7 @@ var serverCommand = cobra.Command{
 func init() {
 	serverCommand.PersistentFlags().
 		StringVarP(&config, "config", "c",
-			"/etc/V2bX/config.json", "config file path")
+			"/etc/sub/config.json", "config file path")
 	serverCommand.PersistentFlags().
 		BoolVarP(&watch, "watch", "w",
 			true, "watch file path change")
@@ -65,7 +65,7 @@ func serverHandle(_ *cobra.Command, _ []string) {
 		log.SetOutput(w)
 	}
 	limiter.Init()
-	log.Info("Start V2bX...")
+	log.Info("Start sub...")
 	vc, err := vCore.NewCore(c.CoresConfig)
 	if err != nil {
 		log.WithField("err", err).Error("new core failed")

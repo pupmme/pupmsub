@@ -11,7 +11,7 @@ CFG_DIR="/etc/${BINARY_NAME}"
 [[ $EUID -ne 0 ]] && echo -e "${red}错误: ${plain} 必须使用root用户运行！\n" && exit 1
 
 echo -e "\n${yellow}============================================${plain}"
-echo -e "${yellow}  V2bX 配置文件生成向导${plain}"
+echo -e "${yellow}  sub 配置文件生成向导${plain}"
 echo -e "${yellow}============================================${plain}"
 echo -e "\n${red}注意：${plain}"
 echo -e "${red}1. 该功能目前处于测试阶段${plain}"
@@ -145,7 +145,7 @@ echo -e "${green}配置文件生成完成，正在重启服务${plain}"
 systemctl restart ${BINARY_NAME}
 sleep 2
 if systemctl is-active --quiet ${BINARY_NAME}; then
-    echo -e "${green}V2bX 重启成功，请使用 sub log 查看日志${plain}"
+    echo -e "${green}sub 重启成功，请使用 sub log 查看日志${plain}"
 else
-    echo -e "${red}V2bX 重启失败，请使用 sub log 查看日志${plain}"
+    echo -e "${red}sub 重启失败，请使用 sub log 查看日志${plain}"
 fi

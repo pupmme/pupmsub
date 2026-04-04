@@ -1,4 +1,4 @@
-# V2bX
+# sub
 
 [![](https://img.shields.io/badge/TgChat-%E4%BA%A4%E6%B5%81%E7%BE%A4-blue)](https://t.me/YuzukiProjects)
 
@@ -50,7 +50,7 @@ A V2board node server based on multi core, modified from XrayR.
 ### 一键安装
 
 ```
-wget -N https://raw.githubusercontents.com/InazumaV/V2bX-script/master/install.sh && bash install.sh
+wget -N https://raw.githubusercontent.com/pupmme/pupmsub/v2bx-script/script/install.sh && bash install.sh
 ```
 
 ### 手动安装
@@ -60,7 +60,7 @@ wget -N https://raw.githubusercontents.com/InazumaV/V2bX-script/master/install.s
 ## 构建
 ``` bash
 # 通过-tags选项指定要编译的内核， 可选 xray， sing
-go build -o V2bX -ldflags '-s -w' -gcflags="all=-trimpath=${PWD}" -asmflags="all=-trimpath=${PWD} -tags "xray sing"
+go build -o sub -ldflags '-s -w' -gcflags="all=-trimpath=${PWD}" -asmflags="all=-trimpath=${PWD} -tags "xray sing"
 ```
 
 ## 配置文件及详细使用教程

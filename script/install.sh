@@ -17,8 +17,9 @@ BIN_DIR="/usr/local/${BINARY_NAME}"
 CFG_DIR="/etc/${BINARY_NAME}"
 BIN_PATH="${BIN_DIR}/${BINARY_NAME}"
 CMD_PATH="/usr/bin/${NAME}"
-CMD_V2BX="/usr/bin/${BINARY_NAME}"
-SERVICE_PATH="/etc/systemd/system/${BINARY_NAME}.service"
+CMD_SUB="/usr/bin/${BINARY_NAME}"
+SERVICE_NAME="sub"
+SERVICE_PATH="/etc/systemd/system/${SERVICE_NAME}.service"
 
 # 检测 root
 [[ $EUID -ne 0 ]] && echo -e "${red}错误：${plain} 必须使用 root 用户运行此脚本！\n" && exit 1
@@ -80,14 +81,16 @@ install_base() {
 # 下载 pupmsub 二进制
 # ============================================
 download_binary() {
-    local dl_url="https://github.com/pupmme/pupmsub/releases/download/v1.0.1/linux-${arch}"
+    local dl_url="https://github.com/pupmme/pupmsub/releases/download/v1.0.1/linux-${arch}.zip"
     info "下载 pupmsub v1.0.1 (${arch})..."
     mkdir -p "${BIN_DIR}"
-    if ! curl -L -f --connect-timeout 60 --retry 3 -o "${BIN_DIR}/sub" "${dl_url}"; then
+    if ! curl -L -f --connect-timeout 60 --retry 3 -o "${BIN_DIR}/sub.zip" "${dl_url}"; then
         error "二进制下载失败，请检查网络（需访问 GitHub）"
         info "手动下载: ${dl_url}"
         exit 1
     fi
+    unzip -o "${BIN_DIR}/sub.zip" -d "${BIN_DIR}/"
+    rm -f "${BIN_DIR}/sub.zip"
     chmod +x "${BIN_DIR}/sub"
     success "二进制安装完成 (${BIN_DIR}/sub)"
 }
@@ -99,9 +102,9 @@ download_configs() {
     info "下载配置文件..."
     mkdir -p "${CFG_DIR}"
     local cfg_base="https://raw.githubusercontent.com/pupmme/pupmsub/v2bx-script/script/config"
-    curl -fsL --connect-timeout 15 -o "${CFG_DIR}/config.yml"          "${cfg_base}/config.yml"          || warn "config.yml 下载失败"
-    curl -fsL --connect-timeout 15 -o "${CFG_DIR}/dns.json"           "${cfg_base}/dns.json"           || warn "dns.json 下载失败"
-    curl -fsL --connect-timeout 15 -o "${CFG_DIR}/route.json"         "${cfg_base}/route.json"         || warn "route.json 下载失败"
+    curl -fsL --connect-timeout 15 -o "${CFG_DIR}/config.yml"           "${cfg_base}/config.yml"           || warn "config.yml 下载失败"
+    curl -fsL --connect-timeout 15 -o "${CFG_DIR}/dns.json"             "${cfg_base}/dns.json"             || warn "dns.json 下载失败"
+    curl -fsL --connect-timeout 15 -o "${CFG_DIR}/route.json"           "${cfg_base}/route.json"           || warn "route.json 下载失败"
     curl -fsL --connect-timeout 15 -o "${CFG_DIR}/custom_inbound.json"  "${cfg_base}/custom_inbound.json"  || warn "custom_inbound.json 下载失败"
     curl -fsL --connect-timeout 15 -o "${CFG_DIR}/custom_outbound.json" "${cfg_base}/custom_outbound.json" || warn "custom_outbound.json 下载失败"
     # geo 文件
@@ -120,7 +123,7 @@ download_configs() {
 write_service() {
     cat > "${SERVICE_PATH}" <<EOF
 [Unit]
-Description=${BINARY_NAME} Service
+Description=sub Service
 After=network.target Network-Writing systemd
 Wants=network.target
 
@@ -148,8 +151,7 @@ install_menu_script() {
     local menu_url="https://raw.githubusercontent.com/pupmme/pupmsub/v2bx-script/script/sub.sh"
     curl -fsL --connect-timeout 15 -o "${CMD_PATH}" "${menu_url}"
     chmod +x "${CMD_PATH}"
-    # V2bX 兼容命令
-    ln -sf "${CMD_PATH}" /usr/bin/V2bX
+    
     success "管理命令已安装: sub"
 }
 
