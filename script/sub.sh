@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# 非 root 时自动 sudo 重跑
+if [[ $EUID -ne 0 ]]; then exec sudo "$0" "$@"; fi
+
+
 # sub 管理脚本
 
 red='\033[0;31m'
