@@ -14,9 +14,65 @@ import (
 
 	"github.com/dustin/go-humanize"
 	"github.com/go-chi/chi/v5"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-var debugHTTPServer *http.Server
+var (
+	debugHTTPServer *http.Server
+
+	// Metrics collectors
+	nodeOnlineUsers = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: "v2bx",
+		Name:      "online_users",
+		Help:      "Number of online users per node",
+	}, []string{"node_tag"})
+
+	nodeTrafficUp = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "v2bx",
+		Name:      "traffic_up_bytes",
+		Help:      "Total upload traffic per node in bytes",
+	}, []string{"node_tag"})
+
+	nodeTrafficDown = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "v2bx",
+		Name:      "traffic_down_bytes",
+		Help:      "Total download traffic per node in bytes",
+	}, []string{"node_tag"})
+
+	nodeTrafficTotal = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: "v2bx",
+		Name:      "traffic_total_bytes",
+		Help:      "Current total traffic (up+down) per node in bytes",
+	}, []string{"node_tag"})
+
+	nodeConnections = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: "v2bx",
+		Name:      "connections_active",
+		Help:      "Number of active connections per node",
+	}, []string{"node_tag"})
+)
+
+func init() {
+	prometheus.MustRegister(nodeOnlineUsers)
+	prometheus.MustRegister(nodeTrafficUp)
+	prometheus.MustRegister(nodeTrafficDown)
+	prometheus.MustRegister(nodeTrafficTotal)
+	prometheus.MustRegister(nodeConnections)
+}
+
+// ExposeHookMetrics lets hook.go push traffic/counter data for Prometheus scraping.
+func ExposeHookMetrics(tag string, upBytes, downBytes int64, onlineConns int) {
+	nodeTrafficUp.WithLabelValues(tag).Add(float64(upBytes))
+	nodeTrafficDown.WithLabelValues(tag).Add(float64(downBytes))
+	nodeTrafficTotal.WithLabelValues(tag).Set(float64(upBytes + downBytes))
+	nodeConnections.WithLabelValues(tag).Set(float64(onlineConns))
+}
+
+// SetOnlineUsers sets the online user gauge for a node.
+func SetOnlineUsers(tag string, count int) {
+	nodeOnlineUsers.WithLabelValues(tag).Set(float64(count))
+}
 
 func applyDebugListenOption(options option.DebugOptions) {
 	if debugHTTPServer != nil {
@@ -54,6 +110,8 @@ func applyDebugListenOption(options option.DebugOptions) {
 		r.HandleFunc("/pprof/symbol", pprof.Symbol)
 		r.HandleFunc("/pprof/trace", pprof.Trace)
 	})
+	// Prometheus /metrics endpoint
+	r.Handle("/metrics", promhttp.Handler())
 	debugHTTPServer = &http.Server{
 		Addr:    options.Listen,
 		Handler: r,

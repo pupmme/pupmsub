@@ -168,7 +168,7 @@ func New(c *conf.CoreConfig) (vCore.Core, error) {
 		return nil, E.Cause(err, "create v2ray api server")
 	}
 	router.SetClashServer(server)
-	return &Box{
+	setGlobalHookServer(server)
 		router:     router,
 		inbounds:   inMap,
 		outbounds:  outbounds,

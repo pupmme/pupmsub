@@ -9,13 +9,46 @@ import (
 
 	"github.com/InazumaV/V2bX/common/rate"
 
-	"github.com/InazumaV/V2bX/limiter"
-
 	"github.com/InazumaV/V2bX/common/counter"
 	"github.com/inazumav/sing-box/adapter"
 	"github.com/inazumav/sing-box/log"
 	N "github.com/sagernet/sing/common/network"
 )
+
+// GetAllNodeStats returns traffic counters and connection counts for all nodes.
+func (h *HookServer) GetAllNodeStats() map[string]struct{ Up, Down int64 } {
+	stats := make(map[string]struct{ Up, Down int64 })
+	h.counter.Range(func(key, value interface{}) bool {
+		tag := key.(string)
+		c := value.(*counter.TrafficCounter)
+		snap := c.Snapshot()
+		var up, down int64
+		for _, s := range snap {
+			up += s.Up
+			down += s.Down
+		}
+		_ = c // suppress unused warning
+		stats[tag] = struct{ Up, Down int64 }{Up: up, Down: down}
+		return true
+	})
+	return stats
+}
+
+// GetCounter returns the TrafficCounter for a specific node tag (for metrics pull).
+func (h *HookServer) GetCounter(tag string) *counter.TrafficCounter {
+	if c, ok := h.counter.Load(tag); ok {
+		return c.(*counter.TrafficCounter)
+	}
+	return nil
+}
+
+// CounterLen returns the number of tracked connections for a node.
+func (h *HookServer) CounterLen(tag string) int {
+	if c, ok := h.counter.Load(tag); ok {
+		return c.(*counter.TrafficCounter).Len()
+	}
+	return 0
+}
 
 type HookServer struct {
 	logger  log.Logger
@@ -46,7 +79,7 @@ func (h *HookServer) PreStart() error {
 }
 
 func (h *HookServer) RoutedConnection(_ context.Context, conn net.Conn, m adapter.InboundContext, _ adapter.Rule) (net.Conn, adapter.Tracker) {
-	t := &Tracker{l: func() {}}
+	t := &Tracker{tag: m.Inbound, user: m.User}
 	l, err := limiter.GetLimiter(m.Inbound)
 	if err != nil {
 		log.Error("get limiter for ", m.Inbound, " error: ", err)
@@ -84,9 +117,7 @@ func (h *HookServer) RoutedConnection(_ context.Context, conn net.Conn, m adapte
 }
 
 func (h *HookServer) RoutedPacketConnection(_ context.Context, conn N.PacketConn, m adapter.InboundContext, _ adapter.Rule) (N.PacketConn, adapter.Tracker) {
-	t := &Tracker{
-		l: func() {},
-	}
+	t := &Tracker{tag: m.Inbound, user: m.User}
 	l, err := limiter.GetLimiter(m.Inbound)
 	if err != nil {
 		log.Error("get limiter for ", m.Inbound, " error: ", err)
@@ -107,7 +138,7 @@ func (h *HookServer) RoutedPacketConnection(_ context.Context, conn N.PacketConn
 	if b, r := l.CheckLimit(m.User, ip, true); r {
 		conn.Close()
 		h.logger.Error("[", m.Inbound, "] ", "Limited ", m.User, " by ip or conn")
-		return conn, &Tracker{l: func() {}}
+		return conn, &Tracker{}
 	} else if b != nil {
 		conn = rate.NewPacketConnCounter(conn, b)
 	}
@@ -140,9 +171,27 @@ func (h *HookServer) StoreFakeIP() bool {
 }
 
 type Tracker struct {
-	l func()
+	l   func()
+	tag  string
+	user string
 }
 
 func (t *Tracker) Leave() {
+	if t.tag != "" && t.user != "" {
+		// Pull final traffic from counter and expose to Prometheus
+		if c := globalHookServer.GetCounter(t.tag); c != nil {
+			up := c.GetUpCount(t.user)
+			down := c.GetDownCount(t.user)
+			ExposeHookMetrics(t.tag, up, down, -1)
+		}
+	}
 	t.l()
+}
+
+// globalHookServer holds the Box-level hookServer for Tracker.Leave() access.
+// Set by Box creation.
+var globalHookServer *HookServer
+
+func setGlobalHookServer(h *HookServer) {
+	globalHookServer = h
 }

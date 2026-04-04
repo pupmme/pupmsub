@@ -86,6 +86,20 @@ func (c *TrafficCounter) IncConn(auth string) {
 	return
 }
 
-func (c *TrafficCounter) DecConn(auth string) {
-	return
+func (c *TrafficCounter) DecConn(auth string) error {
+	return nil
+}
+
+// Snapshot returns a point-in-time snapshot of all user traffic without modifying state.
+func (c *TrafficCounter) Snapshot() map[string]struct{ Up, Down int64 } {
+	c.lock.RLock()
+	defer c.lock.RUnlock()
+	result := make(map[string]struct{ Up, Down int64 }, len(c.counters))
+	for id, s := range c.counters {
+		result[id] = struct{ Up, Down int64 }{
+			Up:   s.UpCounter.Load(),
+			Down: s.DownCounter.Load(),
+		}
+	}
+	return result
 }

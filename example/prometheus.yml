@@ -1,0 +1,12 @@
+# Prometheus scrape config for V2bX / pupmsub
+# Add to prometheus.yml → scrape_configs
+
+scrape_configs:
+  # V2bX debug HTTP server (default :10092)
+  - job_name: 'v2bx'
+    static_configs:
+      - targets:
+          - 'localhost:10092'   # ← 修改为实际 debug HTTP 监听地址
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 15s
