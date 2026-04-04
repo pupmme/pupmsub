@@ -99,22 +99,24 @@ download_binary() {
 # 下载配置文件模板
 # ============================================
 download_configs() {
-    info "下载配置文件..."
     mkdir -p "${CFG_DIR}"
-    local cfg_base="https://raw.githubusercontent.com/pupmme/pupmsub/v2bx-script/script/config"
-    curl -fsL --connect-timeout 15 -o "${CFG_DIR}/config.yml"           "${cfg_base}/config.yml"           || warn "config.yml 下载失败"
-    curl -fsL --connect-timeout 15 -o "${CFG_DIR}/dns.json"             "${cfg_base}/dns.json"             || warn "dns.json 下载失败"
-    curl -fsL --connect-timeout 15 -o "${CFG_DIR}/route.json"           "${cfg_base}/route.json"           || warn "route.json 下载失败"
-    curl -fsL --connect-timeout 15 -o "${CFG_DIR}/custom_inbound.json"  "${cfg_base}/custom_inbound.json"  || warn "custom_inbound.json 下载失败"
-    curl -fsL --connect-timeout 15 -o "${cfg_dir}/custom_outbound.json" "${cfg_base}/custom_outbound.json" || warn "custom_outbound.json 下载失败"
-    # geo 文件
+    echo -e "${green}正在下载 GeoIP/GeoSite 数据库...${plain}"
     curl -fsL --connect-timeout 60 \
         -o "${CFG_DIR}/geoip.dat" \
-        "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat" || warn "geoip.dat 下载失败"
+        "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat" \
+        || echo -e "${yellow}geoip.dat 下载失败${plain}"
     curl -fsL --connect-timeout 60 \
         -o "${CFG_DIR}/geosite.dat" \
-        "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat" || warn "geosite.dat 下载失败"
-    success "配置文件下载完成"
+        "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat" \
+        || echo -e "${yellow}geosite.dat 下载失败${plain}"
+    # 生成极简 config.json（占位，initconfig 会覆盖）
+    cat > "${CFG_DIR}/config.json" <<'CONFIGEOF'
+{
+    "Log": { "Level": "info" },
+    "Nodes": []
+}
+CONFIGEOF
+    success "配置文件初始化完成"
 }
 
 # ============================================
@@ -124,7 +126,7 @@ write_service() {
     cat > "${SERVICE_PATH}" <<EOF
 [Unit]
 Description=sub Service
-After=network.target Network-Writing systemd
+After=network.target nss-lookup.target
 Wants=network.target
 
 [Service]
@@ -151,8 +153,6 @@ install_menu_script() {
     local menu_url="https://raw.githubusercontent.com/pupmme/pupmsub/v2bx-script/script/sub.sh"
     curl -fsL --connect-timeout 15 -o "${CMD_PATH}" "${menu_url}"
     chmod +x "${CMD_PATH}"
-    # V2bX 兼容命令（可选保留）
-    [[ ! -f /usr/bin/V2bX ]] && ln -sf "${CMD_PATH}" /usr/bin/V2bX
     success "管理命令已安装: sub"
 }
 
@@ -185,47 +185,38 @@ init_config() {
     read -rp "例如: 1,2,3 或单个 ID: " node_ids
     [[ -z ${node_ids} ]] && { error "Node ID 不能为空"; exit 1; }
 
-    # 生成 config.yml
-    cat > "${CFG_DIR}/config.yml" <<EOF
-Log:
-  Level: info
-  Output: /var/log/${BINARY_NAME}.log
-DnsConfigPath: ${CFG_DIR}/dns.json
-RouteConfigPath: ${CFG_DIR}/route.json
-InboundConfigPath: ${CFG_DIR}/custom_inbound.json
-OutboundConfigPath: ${CFG_DIR}/custom_outbound.json
-AutoUpdateCron: "0 */6 * * *"
-UpdateURL: ${panel_url}
-Key: ${api_key}
-EOF
 
-    if [[ "${fix_panel}" == [yY] ]]; then
-        sed -i "s|UpdateURL:.*|UpdateURL: ${panel_url}|" "${CFG_DIR}/config.yml"
-        sed -i "s|Key:.*|Key: ${api_key}|" "${CFG_DIR}/config.yml"
-    fi
-
-    # 生成节点配置（逗号分隔的多个 ID）
-    IFS=',' read -ra NODE_ARRAY <<< "${node_ids}"
-    first_node=true
-    for nid in "${NODE_ARRAY[@]}"; do
-        nid=$(echo "${nid}" | tr -d ' ')
-        [[ -z ${nid} ]] && continue
-        if ${first_node}; then
-            cat > "${CFG_DIR}/node.yml" <<EOF
-Nodes:
-  - NodeID: ${nid}
-EOF
-            first_node=false
-        else
-            echo "  - NodeID: ${nid}" >> "${CFG_DIR}/node.yml"
-        fi
-    done
-
-    echo ""
-    success "配置文件已生成"
-    echo -e "  配置目录: ${green}${CFG_DIR}${plain}"
-    echo -e "  管理命令: ${green}sub${plain}"
+    # 生成 config.json（填入面板地址和 Key）
+    cat > "${CFG_DIR}/config.json" <<EOF
+{
+    "Log": { "Level": "info" },
+    "Cores": [
+        {
+            "Type": "sing",
+            "SingConfig": {
+                "Log": { "Level": "info" },
+                "NTP": { "Enable": false },
+                "OriginalPath": "${CFG_DIR}/singbox.json"
+            }
+        }
+    ],
+    "Nodes": [
+        {
+            "NodeID": 1,
+            "NodeType": "vless",
+            "ApiHost": "${panel_url}",
+            "ApiKey": "${api_key}",
+            "EnableUPnP": false,
+            "EnableTFO": true,
+            "EnableMux": true,
+            "Timeout": 4,
+            "ListenIP": "0.0.0.0",
+            "SendIP": "0.0.0.0"
+        }
+    ]
 }
+EOF
+
 
 # ============================================
 # 启动服务
