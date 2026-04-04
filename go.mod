@@ -220,5 +220,5 @@ require (
 	gvisor.dev/gvisor v0.0.0-20230822212503-5bf4e5f98744 // indirect
 	lukechampine.com/blake3 v1.2.1 // indirect
 )
+
 replace github.com/sagernet/sing-shadowsocks v0.2.4 => github.com/inazumav/sing-shadowsocks v0.0.0-20230815111927-7c68cbaeec5c
-replace github.com/sagernet/sing-box => github.com/pupmme/pupmrch v1.13.5-v2bx
