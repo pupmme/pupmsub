@@ -81,17 +81,15 @@ install_base() {
 # ============================================
 download_binary() {
     local dl_url="https://github.com/pupmme/pupmsub/releases/download/v1.0.0/V2bX-linux-${arch}"
-    info "下载 pupmsub v1.0.0..."
+    info "下载 pupmsub v1.0.0 (${arch})..."
     mkdir -p "${BIN_DIR}"
-    if ! curl -L -f --connect-timeout 30 --retry 3 -o "${BIN_DIR}/pupmsub.zip" "${dl_url}"; then
+    if ! curl -L -f --connect-timeout 60 --retry 3 -o "${BIN_PATH}" "${dl_url}"; then
         error "二进制下载失败，请检查网络（需访问 GitHub）"
         info "手动下载: ${dl_url}"
         exit 1
     fi
-    unzip -o "${BIN_DIR}/pupmsub.zip" -d "${BIN_DIR}/"
-    rm -f "${BIN_DIR}/pupmsub.zip"
     chmod +x "${BIN_PATH}"
-    success "二进制安装完成 (${BIN_DIR})"
+    success "二进制安装完成 (${BIN_PATH})"
 }
 
 # ============================================
