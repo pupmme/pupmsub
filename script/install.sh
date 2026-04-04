@@ -106,7 +106,7 @@ download_configs() {
     curl -fsL --connect-timeout 15 -o "${CFG_DIR}/dns.json"             "${cfg_base}/dns.json"             || warn "dns.json 下载失败"
     curl -fsL --connect-timeout 15 -o "${CFG_DIR}/route.json"           "${cfg_base}/route.json"           || warn "route.json 下载失败"
     curl -fsL --connect-timeout 15 -o "${CFG_DIR}/custom_inbound.json"  "${cfg_base}/custom_inbound.json"  || warn "custom_inbound.json 下载失败"
-    curl -fsL --connect-timeout 15 -o "${CFG_DIR}/custom_outbound.json" "${cfg_base}/custom_outbound.json" || warn "custom_outbound.json 下载失败"
+    curl -fsL --connect-timeout 15 -o "${cfg_dir}/custom_outbound.json" "${cfg_base}/custom_outbound.json" || warn "custom_outbound.json 下载失败"
     # geo 文件
     curl -fsL --connect-timeout 60 \
         -o "${CFG_DIR}/geoip.dat" \
@@ -151,7 +151,8 @@ install_menu_script() {
     local menu_url="https://raw.githubusercontent.com/pupmme/pupmsub/v2bx-script/script/sub.sh"
     curl -fsL --connect-timeout 15 -o "${CMD_PATH}" "${menu_url}"
     chmod +x "${CMD_PATH}"
-    
+    # V2bX 兼容命令（可选保留）
+    [[ ! -f /usr/bin/V2bX ]] && ln -sf "${CMD_PATH}" /usr/bin/V2bX
     success "管理命令已安装: sub"
 }
 
