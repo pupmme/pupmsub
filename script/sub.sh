@@ -9,7 +9,7 @@ plain='\033[0m'
 [[ $EUID -ne 0 ]] && echo -e "${red}错误: ${plain} 必须使用root用户运行此脚本！\n" && exit 1
 
 NAME="sub"
-BINARY_NAME="V2bX"
+BINARY_NAME="sub"
 BIN_DIR="/usr/local/${BINARY_NAME}"
 CFG_DIR="/etc/${BINARY_NAME}"
 BIN_PATH="${BIN_DIR}/${BINARY_NAME}"
@@ -128,10 +128,13 @@ uninstall() {
     rm -f ${SERVICE_PATH}
     systemctl daemon-reload
     systemctl reset-failed
+    rm -rf /etc/V2bX
+    rm -rf /usr/local/V2bX
     rm -rf ${CFG_DIR}
     rm -rf ${BIN_DIR}
     rm -f /usr/bin/${NAME}
     rm -f /usr/bin/${BINARY_NAME}
+    rm -f /usr/bin/V2bX
     echo ""
     echo -e "卸载成功，删除脚本: ${green}rm /usr/bin/${NAME} -f${plain}"
     echo ""

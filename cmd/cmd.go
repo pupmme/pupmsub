@@ -8,7 +8,7 @@ import (
 )
 
 var command = &cobra.Command{
-	Use: "V2bX",
+	Use: "sub",
 }
 
 func Run() {

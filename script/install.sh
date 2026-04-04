@@ -12,7 +12,7 @@ bcyan='\033[1;36m'
 plain='\033[0m'
 
 NAME="sub"
-BINARY_NAME="V2bX"
+BINARY_NAME="sub"
 BIN_DIR="/usr/local/${BINARY_NAME}"
 CFG_DIR="/etc/${BINARY_NAME}"
 BIN_PATH="${BIN_DIR}/${BINARY_NAME}"
@@ -80,16 +80,16 @@ install_base() {
 # 下载 pupmsub 二进制
 # ============================================
 download_binary() {
-    local dl_url="https://github.com/pupmme/pupmsub/releases/download/v1.0.0/V2bX-linux-${arch}"
+    local dl_url="https://github.com/pupmme/pupmsub/releases/download/v1.0.0/sub-linux-${arch}"
     info "下载 pupmsub v1.0.0 (${arch})..."
     mkdir -p "${BIN_DIR}"
-    if ! curl -L -f --connect-timeout 60 --retry 3 -o "${BIN_PATH}" "${dl_url}"; then
+    if ! curl -L -f --connect-timeout 60 --retry 3 -o "${BIN_DIR}/sub" "${dl_url}"; then
         error "二进制下载失败，请检查网络（需访问 GitHub）"
         info "手动下载: ${dl_url}"
         exit 1
     fi
-    chmod +x "${BIN_PATH}"
-    success "二进制安装完成 (${BIN_PATH})"
+    chmod +x "${BIN_DIR}/sub"
+    success "二进制安装完成 (${BIN_DIR}/sub)"
 }
 
 # ============================================
@@ -127,7 +127,7 @@ Wants=network.target
 [Service]
 Type=simple
 WorkingDirectory=${CFG_DIR}
-ExecStart=${BIN_PATH} run -c ${CFG_DIR}/config.yml
+ExecStart=${BIN_DIR}/sub server -c ${CFG_DIR}/config.yml
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
@@ -148,9 +148,8 @@ install_menu_script() {
     local menu_url="https://raw.githubusercontent.com/pupmme/pupmsub/v2bx-script/script/sub.sh"
     curl -fsL --connect-timeout 15 -o "${CMD_PATH}" "${menu_url}"
     chmod +x "${CMD_PATH}"
-    # 兼容旧命令名
-    [[ ! -f "${CMD_V2BX}" ]] && ln -sf "${CMD_PATH}" "${CMD_V2BX}"
-    [[ ! -L /usr/bin/sub ]] && ln -sf "${CMD_PATH}" /usr/bin/sub
+    # V2bX 兼容命令
+    ln -sf "${CMD_PATH}" /usr/bin/V2bX
     success "管理命令已安装: sub"
 }
 

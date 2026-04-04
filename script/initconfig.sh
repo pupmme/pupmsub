@@ -5,7 +5,7 @@ green='\033[0;32m'
 yellow='\033[0;33m'
 plain='\033[0m'
 
-BINARY_NAME="V2bX"
+BINARY_NAME="sub"
 CFG_DIR="/etc/${BINARY_NAME}"
 
 [[ $EUID -ne 0 ]] && echo -e "${red}错误: ${plain} 必须使用root用户运行！\n" && exit 1
@@ -15,7 +15,7 @@ echo -e "${yellow}  V2bX 配置文件生成向导${plain}"
 echo -e "${yellow}============================================${plain}"
 echo -e "\n${red}注意：${plain}"
 echo -e "${red}1. 该功能目前处于测试阶段${plain}"
-echo -e "${red}2. 生成的配置会保存到 /etc/V2bX/config.json${plain}"
+echo -e "${red}2. 生成的配置会保存到 /etc/sub/config.json${plain}"
 echo -e "${red}3. 原配置会备份为 config.json.bak${plain}"
 echo ""
 read -rp "确认继续？(y/n，默认 n): " confirm
