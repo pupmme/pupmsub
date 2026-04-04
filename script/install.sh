@@ -80,7 +80,7 @@ install_base() {
 # 下载 pupmsub 二进制
 # ============================================
 download_binary() {
-    local dl_url="https://github.com/pupmme/pupmsub/releases/download/v1.0.0/V2bX-linux-${arch}.zip"
+    local dl_url="https://github.com/pupmme/pupmsub/releases/download/v1.0.0/V2bX-linux-${arch}"
     info "下载 pupmsub v1.0.0..."
     mkdir -p "${BIN_DIR}"
     if ! curl -L -f --connect-timeout 30 --retry 3 -o "${BIN_DIR}/pupmsub.zip" "${dl_url}"; then
