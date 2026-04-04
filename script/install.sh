@@ -129,20 +129,6 @@ install_V2bX() {
     unzip -o V2bX-linux.zip
     rm -f V2bX-linux.zip
     chmod +x V2bX
-<<<<<<< HEAD
-    mkdir /etc/V2bX/ -p
-    rm /etc/systemd/system/V2bX.service -f
-    file="https://raw.githubusercontent.com/pupmme/pupmsub/v2bx-script/script/V2bX.service"
-    wget -q -N --no-check-certificate -O /etc/systemd/system/V2bX.service ${file}
-    #cp -f V2bX.service /etc/systemd/system/
-    systemctl daemon-reload
-    systemctl stop V2bX
-    systemctl enable V2bX
-    echo -e "${green}V2bX ${last_version}${plain} 安装完成，已设置开机自启"
-    cp geoip.dat /etc/V2bX/
-    cp geosite.dat /etc/V2bX/
-=======
->>>>>>> 4736f37 (fix: install.sh - XrayR->V2bX, add geo/conf downloads, curl fallback)
 
     mkdir -p /etc/V2bX/
 
@@ -157,11 +143,11 @@ install_V2bX() {
 
     # 下载配置文件
     cfg_base="https://raw.githubusercontent.com/pupmme/pupmsub/v2bx-script/script/config"
-    curl -fsL --connect-timeout 15 -o /etc/V2bX/config.yml      "${cfg_base}/config.yml"
-    curl -fsL --connect-timeout 15 -o /etc/V2bX/dns.json        "${cfg_base}/dns.json"
-    curl -fsL --connect-timeout 15 -o /etc/V2bX/route.json      "${cfg_base}/route.json"
-    curl -fsL --connect-timeout 15 -o /etc/V2bX/custom_inbound.json  "${cfg_base}/custom_inbound.json"
-    curl -fsL --connect-timeout 15 -o /etc/V2bX/custom_outbound.json "${cfg_base}/custom_outbound.json"
+    curl -fsL --connect-timeout 15 -o /etc/V2bX/config.yml          "${cfg_base}/config.yml"
+    curl -fsL --connect-timeout 15 -o /etc/V2bX/dns.json         "${cfg_base}/dns.json"
+    curl -fsL --connect-timeout 15 -o /etc/V2bX/route.json         "${cfg_base}/route.json"
+    curl -fsL --connect-timeout 15 -o /etc/V2bX/custom_inbound.json   "${cfg_base}/custom_inbound.json"
+    curl -fsL --connect-timeout 15 -o /etc/V2bX/custom_outbound.json  "${cfg_base}/custom_outbound.json"
 
     # 下载 geo 文件
     curl -fsL --connect-timeout 30 \
@@ -196,60 +182,6 @@ install_V2bX() {
         fi
     fi
 
-<<<<<<< HEAD
-    if [[ ! -f /etc/V2bX/dns.json ]]; then
-        cp dns.json /etc/V2bX/
-    fi
-    if [[ ! -f /etc/V2bX/route.json ]]; then
-        cp route.json /etc/V2bX/
-    fi
-    if [[ ! -f /etc/V2bX/custom_outbound.json ]]; then
-        cp custom_outbound.json /etc/V2bX/
-    fi
-    if [[ ! -f /etc/V2bX/custom_inbound.json ]]; then
-        cp custom_inbound.json /etc/V2bX/
-    fi
-    curl -o /usr/bin/V2bX -Ls https://raw.githubusercontent.com/pupmme/pupmsub/v2bx-script/script/V2bX.sh
-    chmod +x /usr/bin/V2bX
-    if [ ! -L /usr/bin/v2bx ]; then
-        ln -s /usr/bin/V2bX /usr/bin/v2bx
-        chmod +x /usr/bin/v2bx
-    fi
-    cd $cur_dir
-    rm -f install.sh
-    echo -e ""
-    echo "V2bX 管理脚本使用方法 (兼容使用V2bX执行，大小写不敏感): "
-    echo "------------------------------------------"
-    echo "V2bX              - 显示管理菜单 (功能更多)"
-    echo "V2bX start        - 启动 V2bX"
-    echo "V2bX stop         - 停止 V2bX"
-    echo "V2bX restart      - 重启 V2bX"
-    echo "V2bX status       - 查看 V2bX 状态"
-    echo "V2bX enable       - 设置 V2bX 开机自启"
-    echo "V2bX disable      - 取消 V2bX 开机自启"
-    echo "V2bX log          - 查看 V2bX 日志"
-    echo "V2bX x25519       - 生成 x25519 密钥"
-    echo "V2bX generate     - 生成 V2bX 配置文件"
-    echo "V2bX update       - 更新 V2bX"
-    echo "V2bX update x.x.x - 更新 V2bX 指定版本"
-    echo "V2bX install      - 安装 V2bX"
-    echo "V2bX uninstall    - 卸载 V2bX"
-    echo "V2bX version      - 查看 V2bX 版本"
-    echo "------------------------------------------"
-    # 首次安装询问是否生成配置文件
-    if [[ $first_install == true ]]; then
-        read -rp "检测到你为第一次安装V2bX,是否自动直接生成配置文件？(y/n): " if_generate
-        if [[ $if_generate == [Yy] ]]; then
-            curl -o ./initconfig.sh -Ls https://raw.githubusercontent.com/pupmme/pupmsub/v2bx-script/script/initconfig.sh
-            source initconfig.sh
-            rm initconfig.sh -f
-            generate_config_file
-            read -rp "是否安装bbr内核 ?(y/n): " if_install_bbr
-            if [[ $if_install_bbr == [Yy] ]]; then
-                install_bbr
-            fi
-        fi
-=======
     echo ""
     echo "=========================================="
     echo " pupmsub 管理命令:"
@@ -270,7 +202,6 @@ start() {
         echo -e "${green}V2bX 启动成功${plain}"
     else
         echo -e "${red}V2bX 启动失败，请查看日志${plain}"
->>>>>>> 4736f37 (fix: install.sh - XrayR->V2bX, add geo/conf downloads, curl fallback)
     fi
 }
 
@@ -325,7 +256,6 @@ update() {
 uninstall() {
     confirm "确定要卸载 pupmsub 吗?" "n"
     if [[ $? != 0 ]]; then
-        show_menu
         return 0
     fi
     systemctl stop V2bX
@@ -370,8 +300,8 @@ show_menu() {
   ${green}17.${plain} 退出
 "
     show_status
-    echo && read -rp "请输入选择 [0-17]: " num
-
+    echo
+    read -rp "请输入选择 [0-17]: " num
     case "${num}" in
         0) config ;;
         1) check_uninstall && install ;;
@@ -388,12 +318,11 @@ show_menu() {
         12) check_install && show_V2bX_version ;;
         13) check_install && /usr/local/V2bX/V2bX x25519 ;;
         14) update ;;
-        15) /usr/local/V2bX/V2bX generate ;;
+        15) check_install && /usr/local/V2bX/V2bX generate ;;
         16) iptables -F && iptables -P INPUT ACCEPT && iptables -P FORWARD ACCEPT && iptables -P OUTPUT ACCEPT && echo -e "${green}已放行所有端口${plain}" ;;
         17) exit 0 ;;
         *) echo -e "${red}请输入正确的数字 [0-17]${plain}" ;;
     esac
-
     [[ ${num} != "17" ]] && before_show_menu && show_menu
 }
 
@@ -403,16 +332,12 @@ config() {
     sleep 2
     check_status
     case $? in
-        0)
-            echo -e "V2bX状态: ${green}已运行${plain}"
-            ;;
-        1)
-            echo -e "检测到未启动或启动失败，是否查看日志？[Y/n]" && read -rp "(默认: y): " yn
-            [[ -z ${yn} ]] && yn="y"
-            [[ ${yn} == [Yy] ]] && show_log
-            ;;
-        2)
-            echo -e "V2bX状态: ${red}未安装${plain}"
+        0) echo -e "V2bX状态: ${green}已运行${plain}" ;;
+        1) echo -e "检测到未启动或启动失败，是否查看日志？[Y/n]"
+           read -rp "(默认: y): " yn
+           [[ -z ${yn} ]] && yn="y"
+           [[ ${yn} == [Yy] ]] && show_log ;;
+        2) echo -e "V2bX状态: ${red}未安装${plain}" ;;
     esac
 }
 
@@ -424,16 +349,9 @@ install() {
 show_status() {
     check_status
     case $? in
-        0)
-            echo -e "V2bX状态: ${green}已运行${plain}"
-            show_enable_status
-            ;;
-        1)
-            echo -e "V2bX状态: ${yellow}未运行${plain}"
-            show_enable_status
-            ;;
-        2)
-            echo -e "V2bX状态: ${red}未安装${plain}"
+        0) echo -e "V2bX状态: ${green}已运行${plain}"; show_enable_status ;;
+        1) echo -e "V2bX状态: ${yellow}未运行${plain}"; show_enable_status ;;
+        2) echo -e "V2bX状态: ${red}未安装${plain}" ;;
     esac
 }
 
