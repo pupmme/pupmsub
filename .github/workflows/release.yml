@@ -184,9 +184,30 @@ jobs:
           name: sub-${{ steps.get_filename.outputs.ASSET_NAME }}
           path: |
             ./sub-${{ steps.get_filename.outputs.ASSET_NAME }}/*
-      - name: Upload binaries to release
-        uses: svenstaro/upload-release-action@v2
+      - name: Upload to release (workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          RELEASE_ID: ${{ github.event.inputs.release_id }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "$RELEASE_ID" ]; then
+            echo "No release_id provided, skipping upload"
+            exit 0
+          fi
+          ASSET_NAME="${{ steps.get_filename.outputs.ASSET_NAME }}"
+          ZIP_FILE="./sub-${ASSET_NAME}.zip"
+          # Check if asset already exists
+          EXISTING=$(curl -s -H "Authorization: Bearer $GH_TOKEN"             "https://api.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets"             | python3 -c "import sys,json; assets=json.load(sys.stdin); print(next((str(a['id']) for a in assets if a['name']=='${ASSET_NAME}.zip'), ''))")
+          if [ -n "$EXISTING" ]; then
+            echo "Deleting existing asset $EXISTING..."
+            curl -s -X DELETE -H "Authorization: Bearer $GH_TOKEN"               "https://api.github.com/repos/${{ github.repository }}/releases/assets/$EXISTING"
+          fi
+          echo "Uploading $ZIP_FILE..."
+          curl -s -X POST             -H "Authorization: Bearer $GH_TOKEN"             -H "Content-Type: application/zip"             --data-binary @"$ZIP_FILE"             "https://uploads.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets?name=${ASSET_NAME}.zip"             | python3 -c "import sys,json; r=json.load(sys.stdin); print('Uploaded:', r.get('name'), 'ID:', r.get('id'))"
+
+      - name: Upload to release (release event)
         if: github.event_name == 'release'
+        uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: ./sub-${{ steps.get_filename.outputs.ASSET_NAME }}.zip*
