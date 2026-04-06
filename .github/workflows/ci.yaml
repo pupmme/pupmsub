@@ -17,7 +17,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.23'
           cache-dependency-path: go.mod
 
       - name: Syntax check (gofmt)
@@ -42,12 +42,11 @@ jobs:
         env:
           GONOSUMDB: "*"
           GOPROXY: https://proxy.golang.org,direct
-          GONOSUMCHECK: "*"
         run: |
-          echo "=== go mod tidy ==="
-          GONOSUMDB="*" GONOSUMCHECK="*" GOPROXY=https://proxy.golang.org,direct go mod tidy 2>&1
+          echo "=== go mod download ==="
+          GONOSUMDB="*" GOPROXY=https://proxy.golang.org,direct go mod download 2>&1
           echo "=== go build ==="
-          GONOSUMDB="*" GONOSUMCHECK="*" go build -v ./... 2>&1
+          GONOSUMDB="*" go build -v ./... 2>&1
 
       - name: Vet (best effort)
         run: GOSUMDB=off go vet ./... 2>&1 || echo "Vet skipped due to deps"
