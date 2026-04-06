@@ -26,20 +26,35 @@ pupmsub agent
   └── api/server.go          ← REST API + Vue SPA
 ```
 
-## 安装
+## 一键安装（推荐）
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/pupmme/pupmsub/main/install.sh | sudo bash
+```
+
+安装脚本会自动：
+1. 检测系统架构并下载/编译对应二进制
+2. 安装 sing-box（如未安装）
+3. 创建 systemd 服务
+4. **交互式初始化配置**（API 地址、密钥、Web 面板账号等）
+5. 启动服务并输出访问地址
+
+## 手动安装
 
 ```bash
 # 下载最新 release
 curl -L https://github.com/pupmme/pupmsub/releases/latest/download/pupmsub-linux-amd64 -o pupmsub
 chmod +x pupmsub
+sudo mv pupmsub /usr/local/bin/
 
-# 安装
-sudo ./pupmsub install
+# 创建目录
+sudo mkdir -p /etc/pupmsub /var/log/pupmsub
 
-# 配置
-sudo nano /etc/pupmsub/config.json
+# 生成初始配置
+sudo pupmsub config init
 
-# 启动
+# 安装 systemd 服务
+sudo pupmsub service install
 sudo systemctl enable --now pupmsub
 ```
 

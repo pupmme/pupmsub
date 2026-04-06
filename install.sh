@@ -1,122 +1,365 @@
-#!/bin/sh
+#!/bin/bash
+#
+# pupmsub One-Click Installer with Interactive Setup Wizard
+# Usage: curl -fsSL https://raw.githubusercontent.com/pupmme/pupmsub/main/install.sh | bash
+#
 
 set -e
 
-NAME="pupmsub"
-BINARY_NAME="pupmsub"
-SYSTEM_NAME="pupmsub"
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
 
-# Directories
-INSTALL_DIR="/etc/pupmsub"
-BIN_DIR="/usr/local/bin"
+# Configuration
+REPO="pupmme/pupmsub"
+INSTALL_DIR="/usr/local/bin"
+CONFIG_DIR="/etc/pupmsub"
+DATA_DIR="/var/lib/pupmsub"
 LOG_DIR="/var/log/pupmsub"
-SERVICE_DIR="/etc/systemd/system"
+SERVICE_NAME="pupmsub"
 
 # Detect architecture
-ARCH=$(uname -m)
-case $ARCH in
-  x86_64)   ARCH_STR="amd64" ;;
-  aarch64)  ARCH_STR="arm64" ;;
-  armv7l)   ARCH_STR="armv7" ;;
-  *)        echo "Unsupported arch: $ARCH"; exit 1 ;;
-esac
+detect_arch() {
+    local arch=$(uname -m)
+    case $arch in
+        x86_64)     echo "amd64" ;;
+        aarch64)    echo "arm64" ;;
+        armv7l)     echo "armv7" ;;
+        *)          echo "unknown" ;;
+    esac
+}
 
-# Detect libc
-LIBC=$(ldd /bin/ls 2>/dev/null | grep -c "musl" || true)
-if [ "$LIBC" -gt 0 ]; then
-  LIBC_STR="musl"
-else
-  LIBC_STR="gnu"
-fi
+# Detect OS
+ detect_os() {
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        echo $ID
+    elif [ -f /etc/redhat-release ]; then
+        echo "rhel"
+    elif [ -f /etc/debian_version ]; then
+        echo "debian"
+    else
+        echo "unknown"
+    fi
+}
 
-PLATFORM="${ARCH_STR}-${LIBC_STR}"
-TMP_DIR=$(mktemp -d)
-ARCHIVE="pupmsub-linux-${PLATFORM}.tar.gz"
-URL="https://github.com/pupmme/pupmsub/releases/latest/download/${ARCHIVE}"
-
-echo "=== ${NAME} 安装脚本 ==="
-echo "Platform: ${PLATFORM}"
-
-# Download
-echo "下载 ${ARCHIVE}..."
-cd "$TMP_DIR"
-if command -v curl >/dev/null 2>&1; then
-  curl -sL "$URL" -o "$ARCHIVE" || { echo "下载失败"; exit 1; }
-elif command -v wget >/dev/null 2>&1; then
-  wget -q "$URL" -O "$ARCHIVE" || { echo "下载失败"; exit 1; }
-else
-  echo "需要 curl 或 wget"
-  exit 1
-fi
-
-# Extract
-echo "解压..."
-tar -xzf "$ARCHIVE"
-EXTRACTED_DIR=$(find . -maxdepth 1 -type d | grep -v '^\.$' | head -1)
-
-# Install
-echo "安装到 ${BIN_DIR}/${BINARY_NAME}..."
-mkdir -p "${BIN_DIR}" "${INSTALL_DIR}" "${LOG_DIR}"
-cp "${EXTRACTED_DIR}/${BINARY_NAME}" "${BIN_DIR}/"
-cp "${EXTRACTED_DIR}/${SYSTEM_NAME}.service" "/${SERVICE_DIR}/" 2>/dev/null || true
-
-# Create default config
-if [ ! -f "${INSTALL_DIR}/config.yaml" ]; then
-  mkdir -p "${INSTALL_DIR}"
-  cat > "${INSTALL_DIR}/config.yaml" << 'EOF'
-api_host: "http://localhost:8080"
-api_key: "your-api-key-here"
-node_id: 1
-node_type: "sing-box"
-binary_path: "/usr/local/bin/sing-box"
-singbox_config: "/etc/pupmsub/sing-box.json"
-data_dir: "/etc/pupmsub"
-log_path: "/var/log/pupmsub/pupmsub.log"
-log_level: "info"
-web_port: 2053
-username: "admin"
-password: "admin"
-heartbeat_interval: "30s"
-sync_interval: "60s"
+# Print banner
+print_banner() {
+    echo -e "${CYAN}"
+    cat << 'EOF'
+    ____             __  __       __ 
+   / __ \__  _______/ / / /______/ /_
+  / /_/ / / / / ___/ / / / ___/ __/
+ / ____/ /_/ (__  ) /_/ (__  ) /_  
+/_/    \__, /____/\____/____/\__/  
+      /____/                        
 EOF
-  echo "默认配置已写入 ${INSTALL_DIR}/config.yaml"
-  echo "请编辑配置："
-  echo "  1. api_host: 填写 xboard 面板地址"
-  echo "  2. api_key: 填写节点密钥"
-  echo "  3. web_port: 管理面板端口（默认 2053）"
-fi
+    echo -e "${NC}"
+    echo -e "${GREEN}One-Click Installer v1.0.0${NC}"
+    echo -e "${BLUE}https://github.com/pupmme/pupmsub${NC}"
+    echo ""
+}
+
+# Check if running as root
+check_root() {
+    if [ "$EUID" -ne 0 ]; then
+        echo -e "${RED}Error: Please run as root (use sudo)${NC}"
+        exit 1
+    fi
+}
+
+# Check dependencies
+check_deps() {
+    local deps=("curl" "systemctl")
+    for dep in "${deps[@]}"; do
+        if ! command -v $dep &> /dev/null; then
+            echo -e "${RED}Error: $dep is required but not installed.${NC}"
+            exit 1
+        fi
+    done
+}
 
 # Install sing-box if not present
-if [ ! -f "/usr/local/bin/sing-box" ]; then
-  echo "正在安装 sing-box..."
-  SINGBOX_URL="https://github.com/SagerNet/sing-box/releases/latest/download/sing-box-${PLATFORM}.tar.gz"
-  if command -v curl >/dev/null 2>&1; then
-    curl -sL "$SINGBOX_URL" -o /tmp/sing-box.tar.gz
-  else
-    wget -q "$SINGBOX_URL" -O /tmp/sing-box.tar.gz
-  fi
-  tar -xzf /tmp/sing-box.tar.gz -C /usr/local/bin sing-box
-  chmod +x /usr/local/bin/sing-box
-  rm -f /tmp/sing-box.tar.gz
-  echo "sing-box 安装完成"
-fi
+install_singbox() {
+    if command -v sing-box &> /dev/null; then
+        echo -e "${GREEN}✓ sing-box already installed: $(sing-box version | head -1)${NC}"
+        return
+    fi
 
-# Reload systemd
-if command -v systemctl >/dev/null 2>&1; then
-  systemctl daemon-reload
-  systemctl enable ${SYSTEM_NAME}
-  echo "${SYSTEM_NAME} 服务已安装并设置为开机启动"
-fi
+    echo -e "${YELLOW}→ Installing sing-box...${NC}"
+    
+    local os=$(detect_os)
+    local arch=$(detect_arch)
+    
+    # Use official sing-box install script
+    bash <(curl -fsSL https://sing-box.app/deb-install.sh) 2>/dev/null || \
+    bash <(curl -fsSL https://sing-box.app/rpm-install.sh) 2>/dev/null || {
+        echo -e "${RED}Failed to install sing-box. Please install manually.${NC}"
+        exit 1
+    }
+    
+    echo -e "${GREEN}✓ sing-box installed${NC}"
+}
 
-# Cleanup
-cd /
-rm -rf "$TMP_DIR"
+# Download and install pupmsub
+install_pupmsub() {
+    echo -e "${YELLOW}→ Installing pupmsub...${NC}"
+    
+    local arch=$(detect_arch)
+    if [ "$arch" = "unknown" ]; then
+        echo -e "${RED}Error: Unsupported architecture: $(uname -m)${NC}"
+        exit 1
+    fi
+    
+    # Create directories
+    mkdir -p "$CONFIG_DIR" "$DATA_DIR" "$LOG_DIR"
+    
+    # Download latest release
+    local download_url="https://github.com/${REPO}/releases/latest/download/pupmsub-linux-${arch}"
+    
+    echo -e "${BLUE}  Downloading from: $download_url${NC}"
+    
+    if curl -fsSL "$download_url" -o "$INSTALL_DIR/pupmsub"; then
+        chmod +x "$INSTALL_DIR/pupmsub"
+        echo -e "${GREEN}✓ pupmsub installed to $INSTALL_DIR/pupmsub${NC}"
+    else
+        # Fallback: build from source
+        echo -e "${YELLOW}  Binary not found, building from source...${NC}"
+        install_from_source
+    fi
+    
+    # Install service file
+    install_service
+}
 
-echo ""
-echo "=== ${NAME} 安装完成 ==="
-echo "服务:   systemctl start ${SYSTEM_NAME}"
-echo "状态:   systemctl status ${SYSTEM_NAME}"
-echo "日志:   journalctl -u ${SYSTEM_NAME} -f"
-echo "管理面板: http://localhost:2053"
-echo ""
-echo "首次使用请编辑 ${INSTALL_DIR}/config.yaml 配置 xboard 地址和密钥"
+# Build from source
+install_from_source() {
+    if ! command -v go &> /dev/null; then
+        echo -e "${RED}Error: Go is required to build from source${NC}"
+        echo -e "${YELLOW}Please install Go 1.23+ or download a pre-built binary${NC}"
+        exit 1
+    fi
+    
+    echo -e "${BLUE}  Building from source (this may take a few minutes)...${NC}"
+    
+    local temp_dir=$(mktemp -d)
+    cd "$temp_dir"
+    
+    git clone --depth 1 "https://github.com/${REPO}.git" . 2>/dev/null || {
+        echo -e "${RED}Failed to clone repository${NC}"
+        exit 1
+    }
+    
+    go build -o "$INSTALL_DIR/pupmsub" . 2>&1 | tail -20
+    
+    cd - > /dev/null
+    rm -rf "$temp_dir"
+    
+    echo -e "${GREEN}✓ Built and installed pupmsub${NC}"
+}
+
+# Install systemd service
+install_service() {
+    cat > "/etc/systemd/system/${SERVICE_NAME}.service" << EOF
+[Unit]
+Description=pupmsub - Sing-box Node Manager
+Documentation=https://github.com/pupmme/pupmsub
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=$INSTALL_DIR/pupmsub run
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:$LOG_DIR/pupmsub.log
+StandardError=append:$LOG_DIR/pupmsub.log
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl daemon-reload
+    echo -e "${GREEN}✓ Systemd service installed${NC}"
+}
+
+# Interactive configuration wizard
+run_wizard() {
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}                   Initial Configuration Wizard                 ${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+    echo ""
+    
+    local config_file="$CONFIG_DIR/config.yaml"
+    
+    # API Configuration
+    echo -e "${YELLOW}Step 1: Xboard API Configuration${NC}"
+    echo -e "${BLUE}Enter your Xboard panel API details:${NC}"
+    echo ""
+    
+    read -p "  API Host (e.g., https://panel.example.com): " api_host
+    while [ -z "$api_host" ]; do
+        echo -e "${RED}  API Host is required${NC}"
+        read -p "  API Host: " api_host
+    done
+    
+    read -p "  API Key: " api_key
+    while [ -z "$api_key" ]; do
+        echo -e "${RED}  API Key is required${NC}"
+        read -p "  API Key: " api_key
+    done
+    
+    read -p "  Node ID (default: 1): " node_id
+    node_id=${node_id:-1}
+    
+    read -p "  Node Type (default: sing-box): " node_type
+    node_type=${node_type:-sing-box}
+    
+    echo ""
+    echo -e "${YELLOW}Step 2: Web Panel Settings${NC}"
+    echo -e "${BLUE}Configure the local management web panel:${NC}"
+    echo ""
+    
+    read -p "  Web Port (default: 2053): " web_port
+    web_port=${web_port:-2053}
+    
+    read -p "  Admin Username (default: admin): " username
+    username=${username:-admin}
+    
+    read -sp "  Admin Password (default: admin): " password
+    echo ""
+    password=${password:-admin}
+    
+    echo ""
+    echo -e "${YELLOW}Step 3: Advanced Settings (optional)${NC}"
+    echo ""
+    
+    read -p "  Sing-box binary path (default: /usr/local/bin/sing-box): " binary_path
+    binary_path=${binary_path:-/usr/local/bin/sing-box}
+    
+    read -p "  Config path (default: /etc/pupmsub/sing-box.json): " config_path
+    config_path=${config_path:-/etc/pupmsub/sing-box.json}
+    
+    # Generate config
+    cat > "$config_file" << EOF
+# pupmsub Configuration File
+# Generated by install.sh on $(date)
+
+api_host: "$api_host"
+api_key: "$api_key"
+node_id: $node_id
+node_type: "$node_type"
+binary_path: "$binary_path"
+singbox_config: "$config_path"
+data_dir: "$DATA_DIR"
+log_path: "$LOG_DIR/pupmsub.log"
+log_level: info
+web_port: $web_port
+username: "$username"
+password: "$password"
+heartbeat_interval: 30s
+sync_interval: 60s
+EOF
+    
+    chmod 600 "$config_file"
+    echo -e "${GREEN}✓ Configuration saved to $config_file${NC}"
+    
+    # Create initial sing-box config
+    mkdir -p "$(dirname "$config_path")"
+    cat > "$config_path" << 'EOF'
+{
+  "log": {
+    "level": "warn"
+  },
+  "inbounds": [],
+  "outbounds": [
+    { "type": "direct", "tag": "direct" },
+    { "type": "block", "tag": "block" }
+  ],
+  "route": {
+    "rules": [
+      { "protocol": ["bittorrent"], "outbound": "block" }
+    ]
+  }
+}
+EOF
+    echo -e "${GREEN}✓ Initial sing-box config created${NC}"
+}
+
+# Start service
+start_service() {
+    echo ""
+    echo -e "${YELLOW}→ Starting pupmsub service...${NC}"
+    
+    systemctl enable "$SERVICE_NAME" --now
+    
+    sleep 2
+    
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        echo -e "${GREEN}✓ Service started successfully${NC}"
+    else
+        echo -e "${RED}✗ Service failed to start${NC}"
+        echo -e "${YELLOW}Check logs: journalctl -u $SERVICE_NAME -n 50${NC}"
+    fi
+}
+
+# Print completion info
+print_completion() {
+    local ip=$(hostname -I | awk '{print $1}')
+    
+    echo ""
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}              Installation Complete!                            ${NC}"
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo -e "${CYAN}Management Web Panel:${NC}"
+    echo -e "  URL:      ${YELLOW}http://${ip}:$(grep web_port $CONFIG_DIR/config.yaml | awk '{print $2}')${NC}"
+    echo -e "  Username: $(grep username $CONFIG_DIR/config.yaml | awk '{print $2}')"
+    echo -e "  Password: [hidden]"
+    echo ""
+    echo -e "${CYAN}Useful Commands:${NC}"
+    echo -e "  ${YELLOW}systemctl status $SERVICE_NAME${NC}  - Check service status"
+    echo -e "  ${YELLOW}systemctl restart $SERVICE_NAME${NC} - Restart service"
+    echo -e "  ${YELLOW}journalctl -u $SERVICE_NAME -f${NC}  - View logs"
+    echo -e "  ${YELLOW}$INSTALL_DIR/pupmsub --help${NC}      - CLI help"
+    echo ""
+    echo -e "${CYAN}Configuration Files:${NC}"
+    echo -e "  Main config:  $CONFIG_DIR/config.yaml"
+    echo -e "  Sing-box:     $(grep singbox_config $CONFIG_DIR/config.yaml | awk '{print $2}')"
+    echo -e "  Logs:         $LOG_DIR/pupmsub.log"
+    echo ""
+    echo -e "${GREEN}Enjoy using pupmsub!${NC}"
+    echo ""
+}
+
+# Main installation flow
+main() {
+    print_banner
+    check_root
+    check_deps
+    
+    echo -e "${CYAN}Detected:${NC} OS=$(detect_os), Arch=$(detect_arch)"
+    echo ""
+    
+    # Install components
+    install_singbox
+    install_pupmsub
+    
+    # Run interactive wizard
+    run_wizard
+    
+    # Start service
+    start_service
+    
+    # Print completion
+    print_completion
+}
+
+# Run main
+main "$@"
