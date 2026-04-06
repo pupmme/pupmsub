@@ -12,30 +12,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - goos: linux
-            goarch: amd64
-            suffix: linux-amd64
-          - goos: linux
-            goarch: arm64
-            suffix: linux-arm64
-          - goos: linux
-            goarch: arm
-            goarm: 7
-            suffix: linux-armv7
-          - goos: darwin
-            goarch: amd64
-            suffix: darwin-amd64
-          - goos: darwin
-            goarch: arm64
-            suffix: darwin-arm64
-          - goos: windows
-            goarch: amd64
-            suffix: windows-amd64.exe
-
     steps:
       - uses: actions/checkout@v4
 
@@ -44,60 +20,19 @@ jobs:
         with:
           go-version: '1.23'
 
-      - name: Build
+      - name: Build linux-amd64
         env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          GOARM: ${{ matrix.goarm }}
           CGO_ENABLED: 0
           GOSUMDB: off
         run: |
-          go build -mod=mod -ldflags '-w -s' -o pupmsub-${{ matrix.suffix }} .
-
-      - name: Check build output
-        run: |
-          if [ -f "pupmsub-${{ matrix.suffix }}" ]; then
-            ls -la pupmsub-${{ matrix.suffix }}
-            file pupmsub-${{ matrix.suffix }}
-          else
-            echo "Build output not found"
-            exit 1
-          fi
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: pupmsub-${{ matrix.suffix }}
-          path: pupmsub-${{ matrix.suffix }}
-          if-no-files-found: error
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
-    
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          pattern: pupmsub-*
-
-      - name: Check artifacts
-        run: |
-          echo "Available artifacts:"
-          find artifacts -type f -name "pupmsub-*" 2>/dev/null || echo "No artifacts found"
-          ls -la artifacts/ 2>/dev/null || true
+          go build -mod=mod -ldflags '-w -s' -o pupmsub-linux-amd64 .
+          ls -la pupmsub-linux-amd64
+          file pupmsub-linux-amd64
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/pupmsub-*
+          files: pupmsub-linux-amd64
           generate_release_notes: true
-          draft: false
-          prerelease: false
-          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
