@@ -99,6 +99,37 @@ func mergeAdvanced(inb map[string]any, adv *db.InboundAdvanced) {
 		return
 	}
 
+	// ---- UDP session isolation (Fix: UDP tuple collision under multi-IP topology) ----
+	// The root cause: when multiple outbound targets share a single internal IPv4
+	// while inbound is scattered across multiple public IPv4s, conntrack fails to
+	// demux returning UDP packets — causing concurrent map read/write panics or
+	// cross-user routing. Fix: force deterministic 5-tuple resolution on all
+	// UDP-friendly inbound types.
+	inbType, _ := inb["type"].(string)
+	if isUDPFriendly(inbType) {
+		// sniff_override_destination: resolve destination before routing to prevent
+		// conntrack tuple collision when multiple public IPs share a single outbound
+		inb["sniff_override_destination"] = true
+		// sniff: always on for UDP to ensure packet identity is preserved
+		inb["sniff"] = true
+		// udp_timeout: cap UDP session lifetime; prevents stale entries from piling up
+		// in the conntrack table when multi-IP topology causes delayed responses
+		inb["udp_timeout"] = 300
+		// domain_strategy: use ipv4-only for UDP to avoid IPv6 path instability
+		inb["domain_strategy"] = "prefer_ipv4"
+	}
+	// multiplex_inbound: for Shadowsocks (and other mux-capable protocols),
+	// enables in-band connection multiplexing per inbound listener.
+	// This provides user-level logical isolation within a single shared port,
+	// preventing the "8 SS ports competing for UDP" failure scenario.
+	if adv.MultiplexInbound {
+		inb["multiplex"] = map[string]any{
+			"enabled":       true,
+			"max_connections": 8,
+			"padding_only":   false,
+		}
+	}
+
 	// uTLS fingerprint
 	if adv.UTLS.Enabled {
 		utls := map[string]any{"enabled": true}
@@ -210,6 +241,18 @@ func outServerToSingbox(ob *db.Outbound) map[string]any {
 		if s.Method != ""    { m["method"] = s.Method }
 	}
 	return m
+}
+
+// isUDPFriendly returns true for inbound types that use UDP for data transport.
+// These types are susceptible to conntrack tuple collision under multi-IP topologies.
+func isUDPFriendly(t string) bool {
+	switch t {
+	case "shadowsocks", "vmess", "vless", "trojan", "hysteria", "hysteria2",
+		"tuic", "wireguard", "quic", "grpc":
+		return true
+	default:
+		return false
+	}
 }
 
 func mergeDNS(cfg map[string]any) {

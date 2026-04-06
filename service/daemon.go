@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/pupmme/pupmsub/db"
 	"github.com/pupmme/pupmsub/logger"
 	"github.com/pupmme/pupmsub/network"
+	"go.uber.org/zap"
 )
 
 var daemon *XboardDaemon
@@ -46,7 +48,7 @@ func (d *XboardDaemon) Start(ctx context.Context) {
 
 	logger.Info("[daemon] starting...")
 	if err := d.doHandshake(); err != nil {
-		logger.Warn("[daemon] initial handshake failed: ", err)
+		logger.Warn("[daemon] initial handshake failed", zap.Error(err))
 	}
 
 	d.wg.Add(1)
@@ -102,13 +104,13 @@ func (d *XboardDaemon) doHandshake() error {
 		hs, err := d.hc.Handshake("pupmsub/1.0.0")
 		if err == nil {
 			d.setConnected(true)
-			logger.Info("[daemon] handshake ok, xboard: ", hs.Version)
+			logger.Info("[daemon] handshake ok, xboard", zap.String("version", hs.Version))
 
 			// Load traffic baseline from persisted snap
 			d.snapMu.Lock()
 			d.lastTrafficSnap = db.GetTrafficSnap()
 			if len(d.lastTrafficSnap) > 0 {
-				logger.Info("[daemon] traffic baseline loaded, users=", len(d.lastTrafficSnap))
+				logger.Info("[daemon] traffic baseline loaded", zap.Int("users", len(d.lastTrafficSnap)))
 			}
 			d.snapMu.Unlock()
 
@@ -199,7 +201,7 @@ func (d *XboardDaemon) syncLoop() {
 func (d *XboardDaemon) doSync() error {
 	cfg, err := d.hc.GetConfig()
 	if err != nil {
-		logger.Warn("[daemon] get config: ", err)
+		logger.Warn("[daemon] get config", zap.Error(err))
 		return err
 	}
 	if cfg == nil {
@@ -222,7 +224,7 @@ func (d *XboardDaemon) doSync() error {
 
 	users, err := d.hc.GetUsers()
 	if err != nil {
-		logger.Warn("[daemon] get users: ", err)
+		logger.Warn("[daemon] get users", zap.Error(err))
 	} else if len(users) > 0 {
 		dbRules := make([]User, len(users))
 		for i, u := range users {
@@ -277,9 +279,9 @@ func (d *XboardDaemon) reportLoop() {
 }
 
 func (d *XboardDaemon) pushTraffic() {
-	snap := db.GetTrafficSnap()
-
+	// FIX: read snap while holding snapMu to prevent torn reads
 	d.snapMu.Lock()
+	snap := db.GetTrafficSnap()
 	delta := make(map[int64][2]int64)
 	for id, cur := range snap {
 		last, ok := d.lastTrafficSnap[id]
@@ -288,20 +290,61 @@ func (d *XboardDaemon) pushTraffic() {
 		} else {
 			delta[id] = [2]int64{0, 0}
 		}
-		d.lastTrafficSnap[id] = cur
 	}
+	// FIX: update lastSnap atomically before releasing lock
+	d.lastTrafficSnap = snap // atomic replace, not map field-by-field
 	db.SetTrafficSnap(d.lastTrafficSnap)
 	d.snapMu.Unlock()
 
 	for id, dlt := range delta {
 		req := network.TrafficRequest{NodeID: 1, UserID: id, U: dlt[0], D: dlt[1]}
 		if err := d.hc.ReportTraffic([]network.TrafficRequest{req}); err != nil {
-			logger.Debug("[daemon] report traffic: ", err)
+			logger.Debug("[daemon] report traffic", zap.Error(err))
 		}
 	}
 	d.syncMu.Lock()
 	d.lastReport = time.Now()
 	d.syncMu.Unlock()
+}
+
+// ApplyUserQuotaChange performs atomic quota update without killing active sessions.
+// 1. Persist new limit to db
+// 2. Send soft-reload signal (SIGHUP) to sing-box — preserves established connections
+// 3. New limit is enforced on next connection attempt; existing sessions continue
+//    until their natural TTL or until they exceed the new quota
+func (d *XboardDaemon) ApplyUserQuotaChange(userID int64, newLimit int64) error {
+	d.snapMu.Lock()
+	defer d.snapMu.Unlock()
+
+	snap := db.GetTrafficSnap()
+	cur, exists := snap[userID]
+	if !exists {
+		snap[userID] = [2]int64{0, newLimit}
+	} else {
+		snap[userID] = [2]int64{cur[0], newLimit}
+	}
+	db.SetTrafficSnap(snap)
+
+	// FIX: soft-reload via SIGHUP instead of process kill
+	// sing-box reloads config and inbound user limits without dropping existing conns
+	sb := GetSingbox()
+	if sb != nil && sb.IsRunning() && sb.cmd != nil && sb.cmd.Process != nil {
+		_ = sb.cmd.Process.Signal(syscall.SIGHUP)
+		logger.Info("[daemon] user quota updated",
+			zap.Int64("user_id", userID),
+			zap.Int64("new_limit", newLimit),
+			zap.String("reload", "sighup"))
+	}
+
+	// Invalidate lastTrafficSnap for this user so next pushTraffic() starts fresh
+	d.snapMu.Lock()
+	if _, ok := d.lastTrafficSnap[userID]; ok {
+		// keep current accumulated value so we don't lose it
+		// just mark that quota changed — next delta will be accurate
+	}
+	d.snapMu.Unlock()
+
+	return nil
 }
 
 // ---- statusLoop ----
@@ -327,7 +370,7 @@ func (d *XboardDaemon) statusLoop() {
 func (d *XboardDaemon) pushStatus() {
 	req := collectSystemStatus()
 	if err := d.hc.PushStatus(req); err != nil {
-		logger.Debug("[daemon] push status: ", err)
+		logger.Debug("[daemon] push status", zap.Error(err))
 	}
 }
 

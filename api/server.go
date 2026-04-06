@@ -96,7 +96,7 @@ func RunServer() {
 	api.GET("/all-tags", handleAllTags)
 
 	addr := ":" + cfg.WebPort
-	logger.Info("HTTP server listening on", addr)
+	logger.InfoCompat("HTTP server listening on", "addr", addr)
 	http.ListenAndServe(addr, r)
 }
 

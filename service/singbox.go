@@ -13,6 +13,7 @@ import (
 
 	"github.com/pupmme/pupmsub/config"
 	"github.com/pupmme/pupmsub/logger"
+	"go.uber.org/zap"
 )
 
 var singbox *SingboxService
@@ -92,13 +93,13 @@ func (s *SingboxService) Start() error {
 		s.running = false
 		s.mu.Unlock()
 		if err != nil {
-			logger.Warn("sing-box exited: ", err)
+			logger.Warn("sing-box exited", zap.Error(err))
 		} else {
 			logger.Info("sing-box stopped gracefully")
 		}
 	}()
 
-	logger.Info("sing-box started, pid=", s.pid)
+	logger.Info("sing-box started", zap.Int("pid", s.pid))
 	return nil
 }
 
