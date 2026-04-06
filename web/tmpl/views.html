@@ -1,0 +1,322 @@
+{{define "dashboard"}}
+<div id="dashboard-view" class="pa-4">
+  <h2 class="text-h5 font-weight-bold mb-4">仪表盘</h2>
+
+  <!-- 状态卡片 -->
+  <v-row class="mb-4">
+    <v-col cols="12" sm="6" md="3">
+      <v-card>
+        <v-card-text class="text-center">
+          <v-icon size="40" :color="status.connected?'success':'error'">
+            {{"{{"}}status.connected?'mdi-cloud-check':'mdi-cloud-off-outline'{{"}}"}}
+          </v-icon>
+          <div class="text-subtitle-2 mt-2">xboard</div>
+          <div class="text-body-2" :class="status.connected?'text-success':'text-error'">
+            {{"{{"}}status.connected?'在线':'离线'{{"}}"}}
+          </div>
+        </v-card-text>
+      </v-card>
+    </v-col>
+    <v-col cols="12" sm="6" md="3">
+      <v-card>
+        <v-card-text class="text-center">
+          <v-icon size="40" :color="status.singbox?'success':'error'">
+            {{"{{"}}status.singbox?'mdi-server':'mdi-server-off'{{"}}"}}
+          </v-icon>
+          <div class="text-subtitle-2 mt-2">sing-box</div>
+          <div class="text-body-2" :class="status.singbox?'text-success':'text-error'">
+            {{"{{"}}status.singbox?'运行中':'已停止'{{"}}"}}
+          </div>
+        </v-card-text>
+      </v-card>
+    </v-col>
+    <v-col cols="12" sm="6" md="3">
+      <v-card>
+        <v-card-text class="text-center">
+          <v-icon size="40" color="primary">mdi-account-group</v-icon>
+          <div class="text-subtitle-2 mt-2">在线用户</div>
+          <div class="text-h5 font-weight-bold">{{"{{"}}status.onlineUsers || 0{{"}}"}}</div>
+        </v-card-text>
+      </v-card>
+    </v-col>
+    <v-col cols="12" sm="6" md="3">
+      <v-card>
+        <v-card-text class="text-center">
+          <v-icon size="40" color="info">mdi-numeric</v-icon>
+          <div class="text-subtitle-2 mt-2">节点 ID</div>
+          <div class="text-h6 font-weight-bold">{{"{{"}}status.nodeId || '-'{{"}}"}}</div>
+        </v-card-text>
+      </v-card>
+    </v-col>
+  </v-row>
+
+  <!-- 快捷操作 -->
+  <v-card class="mb-4">
+    <v-card-title>快捷操作</v-card-title>
+    <v-card-text>
+      <v-row>
+        <v-col cols="6" sm="3">
+          <v-btn block color="primary" variant="tonal" prepend-icon="mdi-sync" @click="sync" :loading="loading.sync">
+            同步 xboard
+          </v-btn>
+        </v-col>
+        <v-col cols="6" sm="3">
+          <v-btn block color="warning" variant="tonal" prepend-icon="mdi-restart" @click="restart" :loading="loading.restart">
+            重启 sing-box
+          </v-btn>
+        </v-col>
+        <v-col cols="6" sm="3">
+          <v-btn block color="info" variant="tonal" prepend-icon="mdi-reload" @click="refresh" :loading="loading.refresh">
+            刷新状态
+          </v-btn>
+        </v-col>
+        <v-col cols="6" sm="3">
+          <v-btn block color="error" variant="tonal" prepend-icon="mdi-refresh" @click="hardRestart" :loading="loading.hard">
+            强制重启
+          </v-btn>
+        </v-col>
+      </v-row>
+    </v-card-text>
+  </v-card>
+
+  <!-- 节点信息 -->
+  <v-card>
+    <v-card-title>节点信息</v-card-title>
+    <v-card-text>
+      <v-table density="compact">
+        <tbody>
+          <tr><td class="text-grey">节点 ID</td><td><code>{{"{{"}}info.nodeId || '-'{{"}}"}}</code></td></tr>
+          <tr><td class="text-grey">节点类型</td><td><code>{{"{{"}}info.nodeType || '-'{{"}}"}}</code></td></tr>
+          <tr><td class="text-grey">xboard 地址</td><td><code>{{"{{"}}info.apiHost || '-'{{"}}"}}</code></td></tr>
+          <tr><td class="text-grey">sing-box 版本</td><td><code>{{"{{"}}info.singboxVersion || '-'{{"}}"}}</code></td></tr>
+          <tr><td class="text-grey">pupmsub 版本</td><td><code>{{"{{"}}info.pupmsubVersion || '-'{{"}}"}}</code></td></tr>
+          <tr><td class="text-grey">配置文件</td><td><code>{{"{{"}}info.configPath || '-'{{"}}"}}</code></td></tr>
+          <tr><td class="text-grey">运行时间</td><td><code>{{"{{"}}info.uptime || '-'{{"}}"}}</code></td></tr>
+        </tbody>
+      </v-table>
+    </v-card-text>
+  </v-card>
+</div>
+
+<script>
+(function(){
+  new Vue({
+    el:'#dashboard-view',
+    data(){return{status:{},info:{},loading:{sync:false,restart:false,refresh:false,hard:false}};},
+    methods:{
+      async load(){
+        try{
+          const r=await fetch('/api/status');
+          const j=await r.json();
+          if(j.success){this.status=j.obj.status||{};this.info=j.obj.info||{};}
+        }catch(e){console.error(e);}
+      },
+      async action(name,path){
+        this.loading[name]=true;
+        try{
+          await fetch(path,{method:'POST'});
+          await new Promise(r=>setTimeout(r,1000));
+          await this.load();
+        }finally{this.loading[name]=false;}
+      },
+      sync(){this.action('sync','/api/xboard/sync');},
+      restart(){this.action('restart','/api/singbox/restart');},
+      hardRestart(){this.action('hard','/api/singbox/restart?force=1');},
+      refresh(){this.action('refresh','/api/status');},
+    },
+    mounted(){this.load();setInterval(()=>this.load(),30000);},
+  });
+})();
+</script>
+{{end}}
+
+{{define "users"}}
+<div id="users-view" class="pa-4">
+  <h2 class="text-h5 font-weight-bold mb-4">用户列表 <span class="text-grey text-body-1">(只读，来自 xboard)</span></h2>
+
+  <v-card v-if="users.length>0">
+    <v-table density="compact">
+      <thead>
+        <tr><th>Email</th><th>UUID/ID</th><th>上行</th><th>下行</th><th>用量限制</th><th>在线设备</th><th>状态</th></tr>
+      </thead>
+      <tbody>
+        <tr v-for="u in users" :key="u.id">
+          <td><code>{{"{{"}}u.email||'-'{{"}}"}}</code></td>
+          <td><code class="text-caption">{{"{{"}}u.uuid||u.id||'-'{{"}}"}}</code></td>
+          <td>{{"{{"}}u.up||0 | bytes{{"}}"}}</td>
+          <td>{{"{{"}}u.down||0 | bytes{{"}}"}}</td>
+          <td>{{"{{"}}u.limit||0 | bytes{{"}}"}}</td>
+          <td>{{"{{"}}u.online||0{{"}}"}}</td>
+          <td>
+            <v-chip size="x-small" :color="u.enable?'success':'error'" variant="tonal">
+              {{"{{"}}u.enable?'启用':'禁用'{{"}}"}}
+            </v-chip>
+          </td>
+        </tr>
+      </tbody>
+    </v-table>
+  </v-card>
+  <v-alert type="info" variant="tonal" v-else>暂无用户数据。</v-alert>
+</div>
+
+<script>
+(function(){
+  new Vue({
+    el:'#users-view',
+    data(){return{users:[]};},
+    filters:{bytes(v){if(!v)return'0 B';const b=typeof v==='number'?v:parseInt(v)||0;return b>1e9?(b/1e9).toFixed(2)+' GB':b>1e6?(b/1e6).toFixed(1)+' MB':b>1e3?(b/1e3).toFixed(0)+' KB':b+' B';}},
+    methods:{
+      async load(){try{const r=await fetch('/api/users');const j=await r.json();if(j.success)this.users=j.obj||[];}catch(e){console.error(e);}},
+    },
+    mounted(){this.load();setInterval(()=>this.load(),60000);},
+  });
+})();
+</script>
+{{end}}
+
+{{define "rules"}}
+<div id="rules-view" class="pa-4">
+  <h2 class="text-h5 font-weight-bold mb-4">路由规则</h2>
+  <div class="d-flex mb-3">
+    <v-spacer></v-spacer>
+    <v-btn color="primary" prepend-icon="mdi-plus" @click="openCreate">添加规则</v-btn>
+  </div>
+
+  <v-card v-if="rules.length>0">
+    <v-table density="compact">
+      <thead>
+        <tr><th>协议</th><th>端口</th><th>出站</th><th>备注</th><th>操作</th></tr>
+      </thead>
+      <tbody>
+        <tr v-for="r in rules" :key="r._key">
+          <td><code>{{"{{"}}r.protocol||'-'{{"}}"}}</code></td>
+          <td><code>{{"{{"}}r.port||'*'{{"}}"}}</code></td>
+          <td><v-chip size="x-small">{{"{{"}}r.outbound{{"}}"}}</v-chip></td>
+          <td class="text-caption text-grey">{{"{{"}}r.note||''{{"}}"}}</td>
+          <td>
+            <v-btn size="x-small" icon="mdi-pencil" variant="text" @click="openEdit(r)"></v-btn>
+            <v-btn size="x-small" icon="mdi-delete" color="error" variant="text" @click="remove(r)"></v-btn>
+          </td>
+        </tr>
+      </tbody>
+    </v-table>
+  </v-card>
+  <v-alert type="info" variant="tonal" v-else>暂无路由规则。</v-alert>
+
+  <!-- 添加/编辑对话框 -->
+  <v-dialog v-model="dialog" max-width="600">
+    <v-card>
+      <v-card-title>{{"{{"}}editMode==='create'?'添加规则':'编辑规则'{{"}}"}}</v-card-title>
+      <v-card-text>
+        <v-select v-model="form.protocol" :items="['',{title:'TCP',value:'tcp'},{title:'UDP',value:'udp'},{title:'TCP+UDP',value:'tcp,udp'}]" label="协议" class="mb-2"></v-select>
+        <v-text-field v-model="form.port" label="端口 (如 443, 1000-2000)" class="mb-2"></v-text-field>
+        <v-text-field v-model="form.inbound_tag" label="Inbound Tag" class="mb-2"></v-text-field>
+        <v-text-field v-model="form.ip" label="IP (CIDR)" class="mb-2"></v-text-field>
+        <v-combobox v-model="form.domain" label="域名 (domain:/regexp:/geosite: 前缀)" multiple chips closable-chips class="mb-2"></v-combobox>
+        <v-select v-model="form.outbound" :items="outboundItems" label="出站节点"></v-select>
+        <v-text-field v-model="form.note" label="备注" class="mt-2"></v-text-field>
+      </v-card-text>
+      <v-card-actions>
+        <v-spacer></v-spacer>
+        <v-btn @click="dialog=false">取消</v-btn>
+        <v-btn color="primary" @click="save" :loading="saving">保存</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
+</div>
+
+<script>
+(function(){
+  new Vue({
+    el:'#rules-view',
+    data(){return{rules:[],dialog:false,editMode:'create',form:{},saving:false,outboundItems:[]};},
+    methods:{
+      async load(){try{const r=await fetch('/api/rules');const j=await r.json();if(j.success)this.rules=j.obj||[];}catch(e){console.error(e);}},
+      async loadOutbounds(){try{const r=await fetch('/api/outbounds');const j=await r.json();this.outboundItems=(j.obj||[]).map(x=>({title:x.tag,value:x.tag}));}catch(e){}},
+      openCreate(){this.editMode='create';this.form={protocol:'',port:'',outbound:'direct'};this.dialog=true;},
+      openEdit(r){this.editMode='edit';this.form=JSON.parse(JSON.stringify(r));this.dialog=true;},
+      async save(){this.saving=true;try{const url=this.editMode==='create'?'/api/rules':`/api/rules/${encodeURIComponent(r._key||'')}`;const r2=await fetch(url,{method:this.editMode==='create'?'POST':'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(this.form)});const j=await r2.json();if(j.success){this.dialog=false;await this.load();}else{alert(j.msg||'保存失败');}}finally{this.saving=false;}},
+      async remove(r){if(!confirm('删除此规则?'))return;await fetch(`/api/rules/${encodeURIComponent(r._key||'')}`,{method:'DELETE'});await this.load();},
+    },
+    mounted(){this.load();this.loadOutbounds();},
+  });
+})();
+</script>
+{{end}}
+
+{{define "settings"}}
+<div id="settings-view" class="pa-4">
+  <h2 class="text-h5 font-weight-bold mb-4">节点设置</h2>
+
+  <v-card class="mb-4">
+    <v-card-title>xboard 连接</v-card-title>
+    <v-card-text>
+      <v-row>
+        <v-col cols="12" sm="6"><v-text-field v-model="cfg.api_host" label="API 地址" hide-details></v-text-field></v-col>
+        <v-col cols="12" sm="6"><v-text-field v-model="cfg.api_key" label="API 密钥" hide-details type="password"></v-text-field></v-col>
+        <v-col cols="12" sm="4"><v-text-field v-model.number="cfg.node_id" label="节点 ID" type="number" hide-details></v-text-field></v-col>
+        <v-col cols="12" sm="4"><v-text-field v-model="cfg.node_type" label="节点类型" hide-details></v-text-field></v-col>
+        <v-col cols="12" sm="4"><v-text-field v-model.number="cfg.web_port" label="Web 端口" type="number" hide-details></v-text-field></v-col>
+      </v-row>
+    </v-card-text>
+    <v-card-actions>
+      <v-spacer></v-spacer>
+      <v-btn color="primary" @click="save" :loading="saving">保存</v-btn>
+    </v-card-actions>
+  </v-card>
+
+  <v-card class="mb-4">
+    <v-card-title>路径配置</v-card-title>
+    <v-card-text>
+      <v-row>
+        <v-col cols="12" sm="6"><v-text-field v-model="cfg.binary_path" label="sing-box 路径" hide-details></v-text-field></v-col>
+        <v-col cols="12" sm="6"><v-text-field v-model="cfg.config_path" label="配置文件路径" hide-details></v-text-field></v-col>
+      </v-row>
+    </v-card-text>
+  </v-card>
+</div>
+
+<script>
+(function(){
+  new Vue({
+    el:'#settings-view',
+    data(){return{cfg:{},saving:false};},
+    methods:{
+      async load(){try{const r=await fetch('/api/settings');const j=await r.json();if(j.success)this.cfg=j.obj||{};}catch(e){console.error(e);}},
+      async save(){this.saving=true;try{await fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(this.cfg)});alert('已保存');}finally{this.saving=false;}},
+    },
+    mounted(){this.load();},
+  });
+})();
+</script>
+{{end}}
+
+{{define "logs"}}
+<div id="logs-view" class="pa-4">
+  <div class="d-flex align-center mb-4">
+    <h2 class="text-h5 font-weight-bold">日志</h2>
+    <v-spacer></v-spacer>
+    <v-btn variant="outlined" prepend-icon="mdi-refresh" @click="load" class="mr-2">刷新</v-btn>
+    <v-btn variant="outlined" prepend-icon="mdi-delete-sweep" color="error" @click="clear">清空</v-btn>
+  </div>
+  <v-card>
+    <v-card-text>
+      <pre class="logs-pre" style="font-family:monospace;font-size:12px;white-space:pre-wrap;word-break:break-all;max-height:70vh;overflow-y:auto">{{"{{"}}logs{{"}}"}}</pre>
+    </v-card-text>
+  </v-card>
+</div>
+
+<script>
+(function(){
+  new Vue({
+    el:'#logs-view',
+    data(){return{logs:'加载中...'};},
+    methods:{
+      async load(){try{const r=await fetch('/api/logs');const t=await r.text();this.logs=t||'暂无日志';}catch(e){this.logs='加载失败: '+e;}},
+      async clear(){if(!confirm('清空所有日志?'))return;await fetch('/api/logs',{method:'DELETE'});this.logs='';},
+    },
+    mounted(){this.load();},
+  });
+})();
+</script>
+{{end}}

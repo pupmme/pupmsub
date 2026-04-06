@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>pupmsub</title>
+<link href="https://cdn.jsdelivr.net/npm/vuetify@3.5.8/dist/vuetify.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css" rel="stylesheet">
+<style>
+[v-cloak]{display:none}.view-title{font-size:1.2rem;font-weight:700;margin-bottom:.5rem}.section-card{margin-bottom:1rem}
+.protocol-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:.75rem;background:#1976d2;color:#fff}
+.badge-vmess{background:#7b1fa2}.badge-vless{background:#1565c0}.badge-trojan{background:#c62828}
+.badge-ss{background:#2e7d32}.badge-hysteria2{background:#ef6c00}.badge-tuic{background:#00838f}
+</style>
+</head>
+<body>
+<div id="app">
+<v-app v-cloak>
+
+<!-- ======= NAV ======= -->
+<v-app-bar color="primary" dark>
+  <v-app-bar-nav-icon @click="drawer=!drawer"></v-app-bar-nav-icon>
+  <v-toolbar-title>pupmsub</v-toolbar-title>
+  <v-spacer></v-spacer>
+  <v-chip size="small" :color="connected?'success':'error'" variant="elevated">
+    {{ connected ? 'xboard 在线' : 'xboard 离线' }}
+  </v-chip>
+  <v-chip size="small" :color="singboxRunning?'success':'error'" variant="elevated" class="ml-2">
+    sing-box {{ singboxRunning ? '运行中' : '已停止' }}
+  </v-chip>
+</v-app-bar>
+
+<v-navigation-drawer v-model="drawer" temporary>
+  <v-list nav>
+    <v-list-item prepend-icon="mdi-view-dashboard" title="Dashboard" @click="view='dashboard';drawer=false"></v-list-item>
+    <v-list-item prepend-icon="mdi-input" title="Inbounds" @click="view='inbounds';drawer=false"></v-list-item>
+    <v-list-item prepend-icon="mdi-account-group" title="Users" @click="view='users';drawer=false"></v-list-item>
+    <v-list-item prepend-icon="mdi-routes" title="Rules" @click="view='rules';drawer=false"></v-list-item>
+    <v-list-item prepend-icon="mdi-account-arrow-right" title="User Rules" @click="view='usersRules';drawer=false"></v-list-item>
+    <v-list-item prepend-icon="mdi-export" title="Outbounds" @click="view='outbounds';drawer=false"></v-list-item>
+    <v-list-item prepend-icon="mdi-dns" title="DNS" @click="view='dns';drawer=false"></v-list-item>
+    <v-list-item prepend-icon="mdi-lock" title="TLS / ACME" @click="view='tls';drawer=false"></v-list-item>
+    <v-list-item prepend-icon="mdi-cog" title="Services" @click="view='services';drawer=false"></v-list-item>
+    <v-list-item prepend-icon="mdi-link-variant" title="Endpoints" @click="view='endpoints';drawer=false"></v-list-item>
+    <v-list-item prepend-icon="mdi-cog-box" title="Settings" @click="view='settings';drawer=false"></v-list-item>
+    <v-list-item prepend-icon="mdi-file-document" title="Logs" @click="view='logs';drawer=false"></v-list-item>
+    <v-divider></v-divider>
+    <v-list-item prepend-icon="mdi-sync" title="同步 xboard" @click="syncXboard()"></v-list-item>
+    <v-list-item prepend-icon="mdi-restart" title="重启 sing-box" @click="restartSingbox()"></v-list-item>
+  </v-list>
+</v-navigation-drawer>
+
+<!-- ======= LOGIN ======= -->
+<v-main v-if="!authed">
+<v-container class="fill-height">
+  <v-row align="center" justify="center">
+    <v-col cols="12" sm="6" md="4">
+      <v-card>
+        <v-card-title>pupmsub 登录</v-card-title>
+        <v-card-text>
+          <v-text-field v-model="loginForm.username" label="用户名" variant="outlined"></v-text-field>
+          <v-text-field v-model="loginForm.password" label="密码" type="password" variant="outlined" @keyup.enter="login()"></v-text-field>
+        </v-card-text>
+        <v-card-actions>
+          <v-btn color="primary" block @click="login()">登录</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-col>
+  </v-row>
+</v-container>
+</v-main>
+
+<!-- ======= MAIN ======= -->
+<v-main v-if="authed">
+
+<!-- ---- DASHBOARD ---- -->
+<div v-if="view==='dashboard'" class="pa-4">
+  <div class="view-title">Dashboard</div>
+  <v-row>
+    <v-col cols="12" sm="6" md="3" v-for="card in statusCards" :key="card.title">
+      <v-card class="section-card">
+        <v-card-item :prepend-icon="card.icon">
+          <v-card-title>{{ card.title }}</v-card-title>
+          <v-card-subtitle>{{ card.sub }}</v-card-subtitle>
+        </v-card-item>
+      </v-card>
+    </v-col>
+  </v-row>
+
+  <v-row>
+    <v-col cols="12" md="6">
+      <v-card class="section-card">
+        <v-card-title>系统信息</v-card-title>
+        <v-card-text>
+          <v-list density="compact">
+            <v-list-item v-for="(v,k) in sysInfo" :key="k">
+              <v-list-item-title class="d-inline" style="width:120px">{{ k }}</v-list-item-title>
+              <v-list-item-subtitle>{{ v }}</v-list-item-subtitle>
+            </v-list-item>
+          </v-list>
+        </v-card-text>
+      </v-card>
+    </v-col>
+    <v-col cols="12" md="6">
+      <v-card class="section-card">
+        <v-card-title>快捷操作</v-card-title>
+        <v-card-text>
+          <v-btn color="primary" class="mr-2 mb-2" :loading="loading" @click="syncXboard()">
+            <v-icon>mdi-sync</v-icon> 同步 xboard
+          </v-btn>
+          <v-btn color="warning" class="mr-2 mb-2" :loading="loading" @click="restartSingbox()">
+            <v-icon>mdi-restart</v-icon> 重启 sing-box
+          </v-btn>
+          <v-btn color="info" class="mb-2" @click="loadStatus()">
+            <v-icon>mdi-refresh</v-icon> 刷新
+          </v-btn>
+        </v-card-text>
+      </v-card>
+    </v-col>
+  </v-row>
+</div>
+
+<!-- ---- INBOUNDS ---- -->
+<div v-if="view==='inbounds'" class="pa-4">
+  <div class="view-title">Inbounds</div>
+
+  <!-- Tabs: 基础 / 高级 -->
+  <v-tabs v-model="inboundTab" color="primary">
+    <v-tab value="basic">基础协议</v-tab>
+    <v-tab value="advanced">高级设置</v-tab>
+  </v-tabs>
+
+  <v-window v-model="inboundTab">
+    <!-- Tab: 基础 -->
+    <v-window-item value="basic">
+      <v-card class="mb-3">
+        <v-card-title class="d-flex align-center">
+          Inbound 列表
+          <v-spacer></v-spacer>
+          <v-btn color="primary" size="small" @click="addInbound()">
+            <v-icon>mdi-plus</v-icon> 新增
+          </v-btn>
+        </v-card-title>
+        <v-data-table :headers="ibHeaders" :items="inbounds" density="compact">
+          <template #item.type="{ item }">
+            <span class="protocol-badge" :class="'badge-'+item.type">{{ item.type }}</span>
+          </template>
+          <template #item.actions="{ item }">
+            <v-btn size="x-small" icon @click="editInbound(item)"><v-icon>mdi-pencil</v-icon></v-btn>
+            <v-btn size="x-small" icon color="error" @click="deleteInbound(item)"><v-icon>mdi-delete</v-icon></v-btn>
+          </template>
+        </v-data-table>
+      </v-card>
+
+      <!-- Inbound 编辑 Dialog -->
+      <v-dialog v-model="ibDialog" max-width="700">
+        <v-card>
+          <v-card-title>{{ ibEditIdx===-1?'新增':'编辑' }} Inbound</v-card-title>
+          <v-card-text>
+            <v-row>
+              <v-col cols="6">
+                <v-text-field v-model="ibForm.tag" label="Tag" variant="outlined" density="compact"></v-text-field>
+              </v-col>
+              <v-col cols="6">
+                <v-select v-model="ibForm.type" :items="protocolTypes" label="Protocol" variant="outlined" density="compact"></v-select>
+              </v-col>
+              <v-col cols="4">
+                <v-text-field v-model.number="ibForm.port" label="Port" type="number" variant="outlined" density="compact"></v-text-field>
+              </v-col>
+              <v-col cols="4">
+                <v-text-field v-model="ibForm.listen" label="Listen" variant="outlined" density="compact"></v-text-field>
+              </v-col>
+              <v-col cols="4">
+                <v-text-field v-model="ibForm.xboard_tag" label="Xboard Tag（可选）" variant="outlined" density="compact"></v-text-field>
+              </v-col>
+              <v-col cols="6">
+                <v-text-field v-model="ibForm.uuid" label="UUID" variant="outlined" density="compact"></v-text-field>
+              </v-col>
+              <v-col cols="6">
+                <v-text-field v-model="ibForm.password" label="Password" variant="outlined" density="compact"></v-text-field>
+              </v-col>
+            </v-row>
+          </v-card-text>
+          <v-card-actions>
+            <v-spacer></v-spacer>
+            <v-btn @click="ibDialog=false">取消</v-btn>
+            <v-btn color="primary" @click="saveInbound()">保存</v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
+    </v-window-item>
+
+    <!-- Tab: 高级设置 -->
+    <v-window-item value="advanced">
+      <v-card class="mb-3">
+        <v-card-title class="d-flex align-center">
+          高级参数
+          <v-spacer></v-spacer>
+          <v-select v-model="advSelectedTag" :items="inbounds.map(i=>i.tag)" label="选择 Inbound" variant="outlined" density="compact" style="max-width:300px"></v-select>
+        </v-card-title>
+        <v-card-text>
+          <v-row>
+            <!-- uTLS -->
+            <v-col cols="12">
+              <v-card variant="outlined" class="mb-3">
+                <v-card-title class="text-subtitle-1">uTLS 指纹</v-card-title>
+                <v-card-text>
+                  <v-switch v-model="advForm.utls.enabled" label="启用 uTLS"></v-switch>
+                  <v-select v-model="advForm.utls.fingerprint" :items="utlsFingerprints" label="Fingerprint" variant="outlined" density="compact" :disabled="!advForm.utls.enabled"></v-select>
+                </v-card-text>
+              </v-card>
+            </v-col>
+
+            <!-- Reality -->
+            <v-col cols="12">
+              <v-card variant="outlined" class="mb-3">
+                <v-card-title class="text-subtitle-1">Reality</v-card-title>
+                <v-card-text>
+                  <v-switch v-model="advForm.reality.enabled" label="启用 Reality"></v-switch>
+                  <v-row v-if="advForm.reality.enabled">
+                    <v-col cols="6"><v-text-field v-model="advForm.reality.public_key" label="Public Key" variant="outlined" density="compact"></v-text-field></v-col>
+                    <v-col cols="3"><v-text-field v-model="advForm.reality.short_id" label="Short ID" variant="outlined" density="compact"></v-text-field></v-col>
+                    <v-col cols="3"><v-text-field v-model="advForm.reality.server_name" label="Server Name (SNI)" variant="outlined" density="compact"></v-text-field></v-col>
+                  </v-row>
+                </v-card-text>
+              </v-card>
+            </v-col>
+
+            <!-- Mux -->
+            <v-col cols="12">
+              <v-card variant="outlined" class="mb-3">
+                <v-card-title class="text-subtitle-1">多路复用 (Mux)</v-card-title>
+                <v-card-text>
+                  <v-switch v-model="advForm.mux.enabled" label="启用 Mux"></v-switch>
+                  <v-slider v-if="advForm.mux.enabled" v-model="advForm.mux.max_connections" :min="1" :max="32" :step="1" label="Max Connections" thumb-label></v-slider>
+                </v-card-text>
+              </v-card>
+            </v-col>
+
+            <!-- TUN -->
+            <v-col cols="12">
+              <v-card variant="outlined" class="mb-3">
+                <v-card-title class="text-subtitle-1">TUN 透明代理</v-card-title>
+                <v-card-text>
+                  <v-switch v-model="advForm.tun.enabled" label="启用 TUN"></v-switch>
+                  <v-row v-if="advForm.tun.enabled">
+                    <v-col cols="3"><v-text-field v-model="advForm.tun.interface_name" label="Interface Name" variant="outlined" density="compact"></v-text-field></v-col>
+                    <v-col cols="3"><v-select v-model="advForm.tun.stack" :items="['system','gviso','mixed']" label="Stack" variant="outlined" density="compact"></v-select></v-col>
+                    <v-col cols="3"><v-text-field v-model.number="advForm.tun.mtu" label="MTU" type="number" variant="outlined" density="compact"></v-text-field></v-col>
+                    <v-col cols="3"><v-switch v-model="advForm.tun.auto_route" label="Auto Route"></v-switch></v-col>
+                  </v-row>
+                </v-card-text>
+              </v-card>
+            </v-col>
+
+            <!-- Shadowsocks Plugin -->
+            <v-col cols="12" md="6">
+              <v-card variant="outlined">
+                <v-card-title class="text-subtitle-1">Shadowsocks 插件</v-card-title>
+                <v-card-text>
+                  <v-switch v-model="advForm.plugin.enabled" label="启用插件"></v-switch>
+                  <v-select v-if="advForm.plugin.enabled" v-model="advForm.plugin.name" :items="['v2ray-plugin','obfs-server']" label="Plugin Name" variant="outlined" density="compact"></v-select>
+                  <v-text-field v-if="advForm.plugin.enabled" v-model="advForm.plugin.opts" label="Plugin Options" variant="outlined" density="compact" placeholder="tls;host=example.com"></v-text-field>
+                </v-card-text>
+              </v-card>
+            </v-col>
+
+            <!-- Hysteria2 Obfs -->
+            <v-col cols="12" md="6">
+              <v-card variant="outlined">
+                <v-card-title class="text-subtitle-1">Hysteria2 混淆</v-card-title>
+                <v-card-text>
+                  <v-switch v-model="advForm.obfs.enabled" label="启用混淆"></v-switch>
+                  <v-select v-if="advForm.obfs.enabled" v-model="advForm.obfs.type" :items="['salamander','http']" label="Obfs Type" variant="outlined" density="compact"></v-select>
+                  <v-text-field v-if="advForm.obfs.enabled" v-model="advForm.obfs.password" label="Obfs Password" variant="outlined" density="compact"></v-text-field>
+                </v-card-text>
+              </v-card>
+            </v-col>
+          </v-row>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer></v-spacer>
+          <v-btn color="primary" @click="saveAdvanced()">保存高级设置</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-window-item>
+  </v-window>
+</div>
+
+<!-- ---- USERS ---- -->
+<div v-if="view==='users'" class="pa-4">
+  <div class="view-title">Users（只读 — 来自 xboard）</div>
+  <v-card>
+    <v-card-text>
+      <v-alert type="info" variant="tonal">用户由 xboard 管理，此处仅展示。</v-alert>
+      <v-data-table :headers="userHeaders" :items="users" density="compact"></v-data-table>
+    </v-card-text>
+  </v-card>
+</div>
+
+<!-- ---- RULES ---- -->
+<div v-if="view==='rules'" class="pa-4">
+  <div class="view-title">路由规则</div>
+  <v-card class="mb-3">
+    <v-card-title class="d-flex align-center">
+      规则列表
+      <v-spacer></v-spacer>
+      <v-btn color="primary" size="small" @click="addRule()"><v-icon>mdi-plus</v-icon> 新增</v-btn>
+    </v-card-title>
+    <v-data-table :headers="ruleHeaders" :items="rules" density="compact">
+      <template #item.outbound="{ item }">
+        <v-chip size="x-small" :color="item.outbound==='block'?'error':item.outbound==='direct'?'success':'primary'">{{ item.outbound }}</v-chip>
+      </template>
+      <template #item.actions="{ item }">
+        <v-btn size="x-small" icon @click="editRule(item)"><v-icon>mdi-pencil</v-icon></v-btn>
+        <v-btn size="x-small" icon color="error" @click="deleteRule(item)"><v-icon>mdi-delete</v-icon></v-btn>
+      </template>
+    </v-data-table>
+  </v-card>
+
+  <!-- Rule Dialog -->
+  <v-dialog v-model="ruleDialog" max-width="800">
+    <v-card>
+      <v-card-title>{{ ruleEditIdx===-1?'新增':'编辑' }}路由规则</v-card-title>
+      <v-card-text>
+        <v-row>
+          <v-col cols="12"><v-select v-model="ruleForm.type" :items="ruleTypes" label="规则类型" variant="outlined" density="compact"></v-select></v-col>
+          <v-col cols="12" v-if="['domain','domain_suffix','domain_keyword'].includes(ruleForm.type)">
+            <v-textarea v-model="ruleFormStr" label="域名（一行一个）" variant="outlined" density="compact" rows="3"></v-textarea>
+          </v-col>
+          <v-col cols="12" v-if="ruleForm.type==='ip_cidr'">
+            <v-textarea v-model="ruleFormStr" label="IP CIDR（一行一个）" variant="outlined" density="compact" rows="3" placeholder="geoip:cn"></v-textarea>
+          </v-col>
+          <v-col cols="6"><v-text-field v-model="ruleForm.outbound" label="Outbound (direct/block/proxy)" variant="outlined" density="compact"></v-text-field></v-col>
+        </v-row>
+      </v-card-text>
+      <v-card-actions>
+        <v-spacer></v-spacer>
+        <v-btn @click="ruleDialog=false">取消</v-btn>
+        <v-btn color="primary" @click="saveRule()">保存</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
+</div>
+
+<!-- ---- USERS RULES ---- -->
+<div v-if="view==='usersRules'" class="pa-4">
+  <div class="view-title">用户规则绑定</div>
+  <v-card>
+    <v-card-title class="d-flex align-center">
+      用户 → Outbound 绑定
+      <v-spacer></v-spacer>
+      <v-btn color="primary" size="small" @click="addUserRule()"><v-icon>mdi-plus</v-icon> 新增</v-btn>
+    </v-card-title>
+    <v-data-table :headers="urHeaders" :items="userRules" density="compact">
+      <template #item.actions="{ item }">
+        <v-btn size="x-small" icon color="error" @click="deleteUserRule(item)"><v-icon>mdi-delete</v-icon></v-btn>
+      </template>
+    </v-data-table>
+  </v-card>
+
+  <v-dialog v-model="urDialog" max-width="500">
+    <v-card>
+      <v-card-title>绑定用户 → Outbound</v-card-title>
+      <v-card-text>
+        <v-select v-model="urForm.email" :items="users.map(u=>u.email)" label="用户 Email" variant="outlined" density="compact"></v-select>
+        <v-text-field v-model="urForm.outbound" label="Outbound Tag" variant="outlined" density="compact"></v-text-field>
+        <v-select v-model.number="urForm.priority" :items="[1,2,3]" label="优先级" variant="outlined" density="compact"></v-select>
+      </v-card-text>
+      <v-card-actions>
+        <v-spacer></v-spacer>
+        <v-btn @click="urDialog=false">取消</v-btn>
+        <v-btn color="primary" @click="saveUserRule()">保存</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
+</div>
+
+<!-- ---- OUTBOUNDS ---- -->
+<div v-if="view==='outbounds'" class="pa-4">
+  <div class="view-title">出口节点</div>
+  <v-card class="mb-3">
+    <v-card-title class="d-flex align-center">
+      Outbound 列表
+      <v-spacer></v-spacer>
+      <v-btn color="primary" size="small" @click="addOutbound()"><v-icon>mdi-plus</v-icon> 新增</v-btn>
+    </v-card-title>
+    <v-data-table :headers="obHeaders" :items="outbounds" density="compact">
+      <template #item.type="{ item }">
+        <span class="protocol-badge" :class="'badge-'+(item.type||'')">{{ item.type }}</span>
+      </template>
+      <template #item.actions="{ item }">
+        <v-btn size="x-small" icon @click="editOutbound(item)"><v-icon>mdi-pencil</v-icon></v-btn>
+        <v-btn size="x-small" icon color="error" @click="deleteOutbound(item)"><v-icon>mdi-delete</v-icon></v-btn>
+      </template>
+    </v-data-table>
+  </v-card>
+
+  <v-dialog v-model="obDialog" max-width="700">
+    <v-card>
+      <v-card-title>{{ obEditIdx===-1?'新增':'编辑' }} Outbound</v-card-title>
+      <v-card-text>
+        <v-row>
+          <v-col cols="6"><v-text-field v-model="obForm.tag" label="Tag" variant="outlined" density="compact"></v-text-field></v-col>
+          <v-col cols="6"><v-select v-model="obForm.type" :items="outboundTypes" label="Type" variant="outlined" density="compact"></v-select></v-col>
+          <template v-if="obForm.type==='vmess' || obForm.type==='vless'">
+            <v-col cols="6"><v-text-field v-model="obForm.server" label="Server" variant="outlined" density="compact"></v-text-field></v-col>
+            <v-col cols="3"><v-text-field v-model.number="obForm.port" label="Port" type="number" variant="outlined" density="compact"></v-text-field></v-col>
+            <v-col cols="12"><v-text-field v-model="obForm.uuid" label="UUID" variant="outlined" density="compact"></v-text-field></v-col>
+          </template>
+          <template v-if="obForm.type==='trojan'">
+            <v-col cols="6"><v-text-field v-model="obForm.server" label="Server" variant="outlined" density="compact"></v-text-field></v-col>
+            <v-col cols="3"><v-text-field v-model.number="obForm.port" label="Port" type="number" variant="outlined" density="compact"></v-text-field></v-col>
+            <v-col cols="12"><v-text-field v-model="obForm.password" label="Password" variant="outlined" density="compact"></v-text-field></v-col>
+          </template>
+          <template v-if="obForm.type==='shadowsocks'">
+            <v-col cols="6"><v-text-field v-model="obForm.server" label="Server" variant="outlined" density="compact"></v-text-field></v-col>
+            <v-col cols="3"><v-text-field v-model.number="obForm.port" label="Port" type="number" variant="outlined" density="compact"></v-text-field></v-col>
+            <v-col cols="3"><v-select v-model="obForm.method" :items="['aes-256-gcm','chacha20-poly1305','2022-blake3-aes-256-gcm']" label="Method" variant="outlined" density="compact"></v-select></v-col>
+            <v-col cols="12"><v-text-field v-model="obForm.password" label="Password" variant="outlined" density="compact"></v-text-field></v-col>
+          </template>
+          <template v-if="obForm.type==='selector'">
+            <v-col cols="12"><v-textarea v-model="obForm.selectorStr" label="Outbounds（一行一个）" variant="outlined" density="compact" rows="4"></v-textarea></v-col>
+          </template>
+        </v-row>
+      </v-card-text>
+      <v-card-actions>
+        <v-spacer></v-spacer>
+        <v-btn @click="obDialog=false">取消</v-btn>
+        <v-btn color="primary" @click="saveOutbound()">保存</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
+</div>
+
+<!-- ---- DNS ---- -->
+<div v-if="view==='dns'" class="pa-4">
+  <div class="view-title">DNS 配置</div>
+  <v-card class="mb-3">
+    <v-card-title>全局设置</v-card-title>
+    <v-card-text>
+      <v-row>
+        <v-col cols="4"><v-select v-model="dnsForm.strategy" :items="['prefer_ipv4','prefer_ipv6','AsIs']" label="Strategy" variant="outlined" density="compact"></v-select></v-col>
+        <v-col cols="4"><v-switch v-model="dnsForm.disable_cache" label="Disable Cache"></v-switch></v-col>
+        <v-col cols="4"><v-switch v-model="dnsForm.disable_expire" label="Disable Expire"></v-switch></v-col>
+      </v-row>
+    </v-card-text>
+  </v-card>
+  <v-card class="mb-3">
+    <v-card-title class="d-flex align-center">
+      DNS 服务器
+      <v-spacer></v-spacer>
+      <v-btn color="primary" size="small" @click="addDNSServer()"><v-icon>mdi-plus</v-icon> 新增</v-btn>
+    </v-card-title>
+    <v-data-table :headers="dnsHeaders" :items="dnsForm.servers" density="compact">
+      <template #item.actions="{ item,index }">
+        <v-btn size="x-small" icon color="error" @click="dnsForm.servers.splice(index,1)"><v-icon>mdi-delete</v-icon></v-btn>
+      </template>
+    </v-data-table>
+  </v-card>
+  <v-card>
+    <v-card-actions>
+      <v-spacer></v-spacer>
+      <v-btn color="primary" @click="saveDNS()">保存</v-btn>
+    </v-card-actions>
+  </v-card>
+
+  <v-dialog v-model="dnsServerDialog" max-width="500">
+    <v-card>
+      <v-card-title>新增 DNS 服务器</v-card-title>
+      <v-card-text>
+        <v-select v-model="dnsSrvForm.type" :items="['doh','dot','doq','block']" label="Type" variant="outlined" density="compact"></v-select>
+        <v-text-field v-model="dnsSrvForm.tag" label="Tag" variant="outlined" density="compact"></v-text-field>
+        <v-text-field v-model="dnsSrvForm.address" label="Address" variant="outlined" density="compact" placeholder="https://8.8.8.8/dns-query"></v-text-field>
+        <v-select v-model="dnsSrvForm.detour" :items="['direct','proxy']" label="Detour" variant="outlined" density="compact"></v-select>
+      </v-card-text>
+      <v-card-actions>
+        <v-spacer></v-spacer>
+        <v-btn @click="dnsServerDialog=false">取消</v-btn>
+        <v-btn color="primary" @click="dnsForm.servers.push({...dnsSrvForm});dnsServerDialog=false">添加</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
+</div>
+
+<!-- ---- TLS / ACME ---- -->
+<div v-if="view==='tls'" class="pa-4">
+  <div class="view-title">TLS / ACME 证书</div>
+  <v-row>
+    <!-- ACME -->
+    <v-col cols="12" md="6">
+      <v-card>
+        <v-card-title>ACME 自动证书</v-card-title>
+        <v-card-text>
+          <v-switch v-model="tlsForm.acme.enabled" label="启用 ACME"></v-switch>
+          <v-text-field v-if="tlsForm.acme.enabled" v-model="tlsForm.acme.default_server" label="默认域名" variant="outlined" density="compact"></v-text-field>
+          <v-text-field v-if="tlsForm.acme.enabled" v-model="tlsForm.acme.default_sni" label="Default SNI" variant="outlined" density="compact"></v-text-field>
+          <v-select v-if="tlsForm.acme.enabled" v-model="tlsForm.acme.preferred_chain" :items="['','ISRG','Let\'s Encrypt']" label="Preferred Chain" variant="outlined" density="compact"></v-select>
+          <v-switch v-if="tlsForm.acme.enabled" v-model="tlsForm.acme.http_challenge" label="HTTP-01 Challenge（需 80 端口）"></v-switch>
+          <v-switch v-if="tlsForm.acme.enabled" v-model="tlsForm.acme.tls_alpn_challenge" label="TLS-ALPN-01 Challenge（需 443 端口）"></v-switch>
+          <v-switch v-if="tlsForm.acme.enabled" v-model="tlsForm.acme.dns_challenge" label="DNS-01 Challenge（自动）"></v-switch>
+
+          <!-- DNS Providers -->
+          <v-card v-if="tlsForm.acme.dns_challenge" variant="outlined" class="mt-3">
+            <v-card-title class="text-subtitle-2">DNS Provider</v-card-title>
+            <v-card-text>
+              <v-select v-model="tlsProvider" :items="['cloudflare','alidns','tencentcloud','route53','godaddy']" label="Provider" variant="outlined" density="compact"></v-select>
+              <template v-if="tlsProvider==='cloudflare'">
+                <v-text-field v-model="tlsForm.acme.providers.cloudflare.CLOUDFLARE_EMAIL" label="Email" variant="outlined" density="compact"></v-text-field>
+                <v-text-field v-model="tlsForm.acme.providers.cloudflare.CLOUDFLARE_API_KEY" label="API Key" variant="outlined" density="compact"></v-text-field>
+              </template>
+              <template v-if="tlsProvider==='alidns'">
+                <v-text-field v-model="tlsForm.acme.providers.alidns.ALICLOUD_ACCESS_KEY" label="Access Key" variant="outlined" density="compact"></v-text-field>
+                <v-text-field v-model="tlsForm.acme.providers.alidns.ALICLOUD_SECRET_KEY" label="Secret Key" variant="outlined" density="compact"></v-text-field>
+              </template>
+              <template v-if="tlsProvider==='tencentcloud'">
+                <v-text-field v-model="tlsForm.acme.providers.tencentcloud.TENCENTCLOUD_SECRET_ID" label="Secret ID" variant="outlined" density="compact"></v-text-field>
+                <v-text-field v-model="tlsForm.acme.providers.tencentcloud.TENCENTCLOUD_SECRET_KEY" label="Secret Key" variant="outlined" density="compact"></v-text-field>
+              </template>
+              <template v-if="tlsProvider==='route53'">
+                <v-text-field v-model="tlsForm.acme.providers.route53.AWS_ACCESS_KEY_ID" label="AWS Access Key ID" variant="outlined" density="compact"></v-text-field>
+                <v-text-field v-model="tlsForm.acme.providers.route53.AWS_SECRET_ACCESS_KEY" label="AWS Secret Access Key" variant="outlined" density="compact"></v-text-field>
+              </template>
+              <template v-if="tlsProvider==='godaddy'">
+                <v-text-field v-model="tlsForm.acme.providers.godaddy.GODADDY_API_KEY" label="API Key" variant="outlined" density="compact"></v-text-field>
+                <v-text-field v-model="tlsForm.acme.providers.godaddy.GODADDY_API_SECRET" label="API Secret" variant="outlined" density="compact"></v-text-field>
+              </template>
+            </v-card-text>
+          </v-card>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer></v-spacer>
+          <v-btn color="primary" @click="saveTLS()">保存</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-col>
+
+    <!-- ECh -->
+    <v-col cols="12" md="6">
+      <v-card>
+        <v-card-title>ECH</v-card-title>
+        <v-card-text>
+          <v-switch v-model="tlsForm.ech.enabled" label="启用 ECH"></v-switch>
+          <v-text-field v-if="tlsForm.ech.enabled" v-model="tlsForm.ech.public_key" label="ECH Public Key" variant="outlined" density="compact"></v-text-field>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer></v-spacer>
+          <v-btn color="primary" @click="saveTLS()">保存</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-col>
+  </v-row>
+</div>
+
+<!-- ---- SERVICES ---- -->
+<div v-if="view==='services'" class="pa-4">
+  <div class="view-title">Services（附加服务）</div>
+  <v-card>
+    <v-card-text>
+      <v-alert type="info" variant="tonal">附加服务完全由本地管理，不依赖 xboard。</v-alert>
+    </v-card-text>
+  </v-card>
+</div>
+
+<!-- ---- ENDPOINTS ---- -->
+<div v-if="view==='endpoints'" class="pa-4">
+  <div class="view-title">Endpoints</div>
+  <v-card class="mb-3">
+    <v-card-title class="d-flex align-center">
+      规则集 URL
+      <v-spacer></v-spacer>
+      <v-btn color="primary" size="small" @click="endpoints.push('');saveEndpoints()"><v-icon>mdi-plus</v-icon> 新增</v-btn>
+    </v-card-title>
+    <v-list>
+      <v-list-item v-for="(ep,i) in endpoints" :key="i">
+        <v-list-item-title><v-text-field v-model="endpoints[i]" variant="plain" density="compact" @blur="saveEndpoints()"></v-text-field></v-list-item-title>
+        <template #append><v-btn icon size="x-small" color="error" @click="endpoints.splice(i,1);saveEndpoints()"><v-icon>mdi-delete</v-icon></v-btn></template>
+      </v-list-item>
+    </v-list>
+  </v-card>
+</div>
+
+<!-- ---- SETTINGS ---- -->
+<div v-if="view==='settings'" class="pa-4">
+  <div class="view-title">节点设置</div>
+  <v-card class="mb-3">
+    <v-card-title>xboard 对接</v-card-title>
+    <v-card-text>
+      <v-row>
+        <v-col cols="6"><v-text-field v-model="settingsForm.api_host" label="API Host" variant="outlined" density="compact"></v-text-field></v-col>
+        <v-col cols="6"><v-text-field v-model="settingsForm.api_key" label="API Key" variant="outlined" density="compact"></v-text-field></v-col>
+        <v-col cols="6"><v-text-field v-model.number="settingsForm.node_id" label="Node ID" type="number" variant="outlined" density="compact"></v-text-field></v-col>
+        <v-col cols="6"><v-text-field v-model="settingsForm.node_type" label="Node Type" variant="outlined" density="compact"></v-text-field></v-col>
+      </v-row>
+    </v-card-text>
+  </v-card>
+  <v-card class="mb-3">
+    <v-card-title>本地路径</v-card-title>
+    <v-card-text>
+      <v-row>
+        <v-col cols="6"><v-text-field v-model="settingsForm.binary_path" label="sing-box 路径" variant="outlined" density="compact"></v-text-field></v-col>
+        <v-col cols="6"><v-text-field v-model="settingsForm.singbox_config" label="sing-box 配置路径" variant="outlined" density="compact"></v-text-field></v-col>
+        <v-col cols="6"><v-text-field v-model="settingsForm.data_dir" label="数据目录" variant="outlined" density="compact"></v-text-field></v-col>
+        <v-col cols="6"><v-text-field v-model="settingsForm.log_path" label="日志路径" variant="outlined" density="compact"></v-text-field></v-col>
+      </v-row>
+    </v-card-text>
+  </v-card>
+  <v-card class="mb-3">
+    <v-card-title>Web 服务</v-card-title>
+    <v-card-text>
+      <v-row>
+        <v-col cols="4"><v-text-field v-model.number="settingsForm.web_port" label="Web 端口" type="number" variant="outlined" density="compact"></v-text-field></v-col>
+        <v-col cols="4"><v-text-field v-model="settingsForm.username" label="用户名" variant="outlined" density="compact"></v-text-field></v-col>
+        <v-col cols="4"><v-text-field v-model="settingsForm.password" label="密码" variant="outlined" density="compact"></v-text-field></v-col>
+      </v-row>
+    </v-card-text>
+  </v-card>
+  <v-card class="mb-3">
+    <v-card-title>运行参数</v-card-title>
+    <v-card-text>
+      <v-row>
+        <v-col cols="6"><v-text-field v-model="settingsForm.heartbeat_interval" label="心跳间隔" variant="outlined" density="compact"></v-text-field></v-col>
+        <v-col cols="6"><v-text-field v-model="settingsForm.sync_interval" label="同步间隔" variant="outlined" density="compact"></v-text-field></v-col>
+      </v-row>
+    </v-card-text>
+  </v-card>
+  <v-card>
+    <v-card-actions>
+      <v-spacer></v-spacer>
+      <v-btn color="primary" @click="saveSettings()">保存</v-btn>
+    </v-card-actions>
+  </v-card>
+</div>
+
+<!-- ---- LOGS ---- -->
+<div v-if="view==='logs'" class="pa-4">
+  <div class="view-title">日志</div>
+  <v-card>
+    <v-card-title class="d-flex align-center">
+      pupmsub + sing-box 日志
+      <v-spacer></v-spacer>
+      <v-btn size="small" @click="loadLogs()"><v-icon>mdi-refresh</v-icon></v-btn>
+    </v-card-title>
+    <v-card-text>
+      <v-textarea v-model="logContent" readonly variant="outlined" rows="20" style="font-family:monospace"></v-textarea>
+    </v-card-text>
+  </v-card>
+</div>
+
+</v-main>
+</v-app>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@3.4.21/dist/vue.global.prod.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/vuetify@3.5.8/dist/vuetify.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios@1.6.7/dist/axios.min.js"></script>
+<script>
+const { createApp, ref, onMounted, computed } = Vue;
+const { createVuetify } = Vuetify;
+const vuetify = createVuetify({});
+
+createApp({
+  setup() {
+    const view = ref('dashboard');
+    const authed = ref(false);
+    const drawer = ref(false);
+    const loading = ref(false);
+    const connected = ref(false);
+    const singboxRunning = ref(false);
+    const loginForm = ref({ username: '', password: '' });
+    const statusCards = ref([]);
+    const logContent = ref('');
+
+    const inbounds = ref([]);
+    const ibHeaders = [{title:'Tag',key:'tag'},{title:'Type',key:'type'},{title:'Port',key:'port'},{title:'Listen',key:'listen'},{title:'Xboard Tag',key:'xboard_tag'},{title:'',key:'actions',sortable:false}];
+    const ibDialog = ref(false);
+    const ibEditIdx = ref(-1);
+    const ibForm = ref({tag:'',type:'vless',port:443,listen:'0.0.0.0',uuid:'',password:'',xboard_tag:''});
+    const protocolTypes = ['vless','vmess','trojan','shadowsocks','hysteria2','tuic','socks','naive','http','tun','tproxy'];
+    const utlsFingerprints = ['chrome','firefox','safari','android','edge','random'];
+    const inboundTab = ref('basic');
+    const advSelectedTag = ref('');
+    const advForm = ref({tag:'',utls:{enabled:false,fingerprint:'chrome'},reality:{enabled:false,public_key:'',short_id:'',server_name:''},mux:{enabled:false,max_connections:8},tun:{enabled:false,interface_name:'tun0',stack:'system',mtu:9000,auto_route:true,strict_route:false},plugin:{enabled:false,name:'',opts:''},obfs:{enabled:false,type:'salamander',password:''}});
+
+    const users = ref([]);
+    const userHeaders = [{title:'ID',key:'id'},{title:'Email',key:'email'},{title:'Enable',key:'enable'}];
+
+    const rules = ref([]);
+    const ruleHeaders = [{title:'Type',key:'type'},{title:'Domain',key:'domain'},{title:'Outbound',key:'outbound'},{title:'',key:'actions',sortable:false}];
+    const ruleDialog = ref(false);
+    const ruleEditIdx = ref(-1);
+    const ruleForm = ref({type:'domain',domain:[],ip_cidr:[],outbound:'direct'});
+    const ruleFormStr = ref('');
+    const ruleTypes = ['domain','domain_suffix','domain_keyword','ip_cidr','port','network','protocol','inbound_tag','user'];
+
+    const userRules = ref([]);
+    const urHeaders = [{title:'Email',key:'email'},{title:'Outbound',key:'outbound'},{title:'Priority',key:'priority'},{title:'',key:'actions',sortable:false}];
+    const urDialog = ref(false);
+    const urForm = ref({email:'',outbound:'direct',priority:1});
+
+    const outbounds = ref([]);
+    const obHeaders = [{title:'Tag',key:'tag'},{title:'Type',key:'type'},{title:'Server',key:'server'},{title:'',key:'actions',sortable:false}];
+    const obDialog = ref(false);
+    const obEditIdx = ref(-1);
+    const obForm = ref({tag:'',type:'vmess',server:'',port:443,uuid:'',password:'',method:'aes-256-gcm'});
+    const outboundTypes = ['vmess','vless','trojan','shadowsocks','hysteria','hysteria2','tuic','wireguard','selector','urltest','direct','block','dns'];
+
+    const dnsForm = ref({strategy:'prefer_ipv4',disable_cache:false,disable_expire:false,servers:[]});
+    const dnsHeaders = [{title:'Tag',key:'tag'},{title:'Type',key:'type'},{title:'Address',key:'address'},{title:'Detour',key:'detour'},{title:'',key:'actions',sortable:false}];
+    const dnsServerDialog = ref(false);
+    const dnsSrvForm = ref({tag:'',type:'doh',address:'',detour:'direct'});
+
+    const tlsForm = ref({acme:{enabled:false,default_server:'',default_sni:'',http_challenge:false,tls_alpn_challenge:false,dns_challenge:false,providers:{}},ech:{enabled:false,public_key:''}});
+    const tlsProvider = ref('cloudflare');
+
+    const settingsForm = ref({});
+    const endpoints = ref([]);
+
+    const api = axios.create({ baseURL: '/api', withCredentials: true });
+
+    async function login() {
+      try {
+        await api.post('/auth/login', loginForm.value);
+        authed.value = true;
+        init();
+      } catch(e) { alert('登录失败: '+e.message); }
+    }
+
+    async function init() {
+      await loadStatus();
+      await loadInbounds();
+      await loadRules();
+      await loadOutbounds();
+      await loadDNS();
+      await loadTLS();
+      await loadSettings();
+      await loadEndpoints();
+      await loadUsers();
+    }
+
+    async function loadStatus() {
+      try {
+        const r = await api.get('/status');
+        const d = r.data.success ? r.data.obj : {};
+        connected.value = d.connected || false;
+        singboxRunning.value = d.singbox || false;
+        statusCards.value = [
+          {title:'xboard 连接', sub:d.connected?'在线':'离线', icon:'mdi-cloud'},
+          {title:'sing-box',   sub:d.singbox?'运行中':'已停止', icon:'mdi-server'},
+          {title:'在线用户',   sub:d.onlineUsers||0, icon:'mdi-account-group'},
+          {title:'节点 ID',    sub:d.nodeId||'-', icon:'mdi-numeric'},
+        ];
+      } catch(e) {}
+    }
+
+    async function loadInbounds() {
+      try { const r=await api.get('/inbounds'); inbounds.value=r.data.success?r.data.obj:[]; } catch(e) {}
+    }
+    function addInbound() { ibEditIdx.value=-1; ibForm.value={tag:'in-'+Date.now(),type:'vless',port:443,listen:'0.0.0.0',uuid:'',password:'',xboard_tag:''}; ibDialog.value=true; }
+    function editInbound(item) { ibEditIdx.value=inbounds.value.indexOf(item); ibForm.value={...item}; ibDialog.value=true; }
+    async function saveInbound() {
+      await api.post('/inbounds', ibForm.value);
+      ibDialog.value=false;
+      await loadInbounds();
+    }
+    async function deleteInbound(item) { if(!confirm('删除 "'+item.tag+'"？'))return; await api.delete('/inbounds/'+encodeURIComponent(item.tag)); await loadInbounds(); }
+    async function saveAdvanced() { await api.put('/inbounds/advanced',[advForm.value]); }
+
+    async function loadUsers() { try { const r=await api.get('/users'); users.value=r.data.success?r.data.obj:[]; } catch(e) {} }
+
+    async function loadRules() { try { const r=await api.get('/rules'); rules.value=r.data.success?r.data.obj:[]; } catch(e) {} }
+    function addRule() { ruleEditIdx.value=-1; ruleForm.value={type:'domain',domain:[],outbound:'direct'}; ruleFormStr.value=''; ruleDialog.value=true; }
+    function editRule(item) { ruleEditIdx.value=rules.value.indexOf(item); ruleForm.value={...item}; ruleFormStr.value=(item.domain||[]).join('
+'); ruleDialog.value=true; }
+    async function saveRule() {
+      const r={...ruleForm.value};
+      if(['domain','domain_suffix','domain_keyword'].includes(r.type)) r.domain=ruleFormStr.value.split('
+').filter(s=>s.trim());
+      if(r.type==='ip_cidr') r.ip_cidr=ruleFormStr.value.split('
+').filter(s=>s.trim());
+      const arr=[...rules.value];
+      if(ruleEditIdx.value===-1) arr.push(r); else arr.splice(ruleEditIdx.value,1,r);
+      await api.put('/rules',arr);
+      ruleDialog.value=false;
+      await loadRules();
+    }
+    async function deleteRule(item) { if(!confirm('删除此规则?'))return; rules.value.splice(rules.value.indexOf(item),1); await api.put('/rules',rules.value); await loadRules(); }
+
+    async function loadUserRules() { try { const r=await api.get('/users-rules'); userRules.value=r.data.success?r.data.obj:[]; } catch(e) {} }
+    function addUserRule() { urForm.value={email:'',outbound:'direct',priority:1}; urDialog.value=true; }
+    async function saveUserRule() { await api.put('/users-rules',[...userRules.value,urForm.value]); urDialog.value=false; await loadUserRules(); }
+    async function deleteUserRule(item) { if(!confirm('删除?'))return; userRules.value.splice(userRules.value.indexOf(item),1); await api.put('/users-rules',userRules.value); await loadUserRules(); }
+
+    async function loadOutbounds() { try { const r=await api.get('/outbounds'); outbounds.value=r.data.success?r.data.obj:[]; } catch(e) {} }
+    function addOutbound() { obEditIdx.value=-1; obForm.value={tag:'out-'+Date.now(),type:'vmess',server:'',port:443,uuid:'',password:'',method:'aes-256-gcm'}; obDialog.value=true; }
+    function editOutbound(item) { obEditIdx.value=outbounds.value.indexOf(item); obForm.value={...item}; obDialog.value=true; }
+    async function saveOutbound() {
+      await api.post('/outbounds/'+encodeURIComponent(obForm.value.tag),obForm.value);
+      obDialog.value=false;
+      await loadOutbounds();
+    }
+    async function deleteOutbound(item) { if(!confirm('删除 "'+item.tag+'"？'))return; await api.delete('/outbounds/'+encodeURIComponent(item.tag)); await loadOutbounds(); }
+
+    async function loadDNS() { try { const r=await api.get('/dns'); dnsForm.value=r.data.success?r.data.obj:dnsForm.value; } catch(e) {} }
+    function addDNSServer() { dnsSrvForm.value={tag:'',type:'doh',address:'',detour:'direct'}; dnsServerDialog.value=true; }
+    async function saveDNS() { await api.put('/dns',dnsForm.value); }
+
+    async function loadTLS() { try { const r=await api.get('/tls'); tlsForm.value=r.data.success?r.data.obj:tlsForm.value; } catch(e) {} }
+    async function saveTLS() { await api.put('/tls',tlsForm.value); }
+
+    async function loadSettings() { try { const r=await api.get('/settings'); if(r.data.success)settingsForm.value=r.data.obj||{}; } catch(e) {} }
+    async function saveSettings() { await api.put('/settings',settingsForm.value); alert('已保存'); }
+
+    async function loadEndpoints() { try { const r=await api.get('/endpoints'); endpoints.value=r.data.success?r.data.obj:[]; } catch(e) { endpoints.value=[]; } }
+    async function saveEndpoints() { await api.put('/endpoints',endpoints.value); }
+
+    async function loadLogs() { try { const r=await api.get('/logs'); logContent.value=r.data.success?(r.data.logs||''):'加载失败'; } catch(e) { logContent.value='加载失败: '+e.message; } }
+
+    async function syncXboard() { loading.value=true; try{await api.post('/xboard/sync');await loadStatus();}finally{loading.value=false;} }
+    async function restartSingbox() { loading.value=true; try{await api.post('/singbox/restart');await loadStatus();}finally{loading.value=false;} }
+
+    onMounted(() => init());
+
+    return {
+      view,authed,drawer,loading,connected,singboxRunning,loginForm,statusCards,logContent,
+      inbounds,ibHeaders,ibDialog,ibForm,protocolTypes,utlsFingerprints,
+      inboundTab,advSelectedTag,advForm,
+      users,userHeaders,
+      rules,ruleHeaders,ruleDialog,ruleForm,ruleFormStr,ruleTypes,
+      userRules,urHeaders,urDialog,urForm,
+      outbounds,obHeaders,obDialog,obForm,outboundTypes,
+      dnsForm,dnsHeaders,dnsServerDialog,dnsSrvForm,
+      tlsForm,tlsProvider,settingsForm,endpoints,
+      login,loadStatus,loadInbounds,addInbound,editInbound,saveInbound,deleteInbound,saveAdvanced,
+      loadUsers,loadRules,addRule,editRule,saveRule,deleteRule,
+      addUserRule,saveUserRule,deleteUserRule,loadUserRules,
+      loadOutbounds,addOutbound,editOutbound,saveOutbound,deleteOutbound,
+      loadDNS,addDNSServer,saveDNS,loadTLS,saveTLS,
+      loadSettings,saveSettings,loadEndpoints,saveEndpoints,loadLogs,
+      syncXboard,restartSingbox,
+    };
+  }
+}).use(vuetify).mount('#app');
+</script>
+</body>
+</html>

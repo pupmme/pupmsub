@@ -1,0 +1,15 @@
+[Unit]
+Description=pupmme pupmsub agent
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/pupmsub run
+Restart=always
+RestartSec=5
+
+Environment=PUPMUB_CONFIG=/etc/pupmsub/config.yaml
+Environment=PUPMUB_DATA_DIR=/etc/pupmsub
+
+[Install]
+WantedBy=multi-user.target

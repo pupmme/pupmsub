@@ -1,0 +1,395 @@
+{{define "inbounds"}}
+<div id="inbounds-view" class="pa-4">
+
+  <!-- ========== 页面头部 ========== -->
+  <div class="d-flex align-center mb-4">
+    <h2 class="text-h5 font-weight-bold">Inbound 配置</h2>
+    <v-spacer></v-spacer>
+    <v-btn color="primary" prepend-icon="mdi-plus" @click="openCreate">
+      新建 Inbound
+    </v-btn>
+    <v-btn variant="outlined" prepend-icon="mdi-sync" class="ml-2" @click="syncXboard" :loading="syncing">
+      同步 xboard
+    </v-btn>
+  </div>
+
+  <!-- ========== Inbound 列表 ========== -->
+  <v-card v-if="inbounds.length > 0">
+    <v-table density="compact">
+      <thead>
+        <tr>
+          <th>Tag</th>
+          <th>协议</th>
+          <th>端口</th>
+          <th>xboard 骨架</th>
+          <th>高级参数</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="ib in inbounds" :key="ib.tag">
+          <td><code>{{"{{"}}ib.tag{{"}}"}}</code></td>
+          <td>
+            <v-chip size="x-small" :color="protoColor(ib.type)" variant="elevated">
+              {{"{{"}}ib.type{{"}}"}}
+            </v-chip>
+          </td>
+          <td>{{"{{"}}ib.listen_port || '-'{{"}}"}}</td>
+          <td>
+            <v-chip size="x-small" :color="ib._synced ? 'success' : 'default'" variant="tonal">
+              {{"{{"}}ib._synced ? '已同步' : '本地'{{"}}"}}
+            </v-chip>
+          </td>
+          <td>
+            <v-chip size="x-small" color="info" variant="tonal" v-if="hasAdvanced(ib)">
+              已配置
+            </v-chip>
+            <v-chip size="x-small" color="grey" variant="text" v-else>未配置</v-chip>
+          </td>
+          <td>
+            <v-btn-group density="compact">
+              <v-btn size="x-small" icon="mdi-pencil" color="primary" variant="text" @click="openEdit(ib)" title="编辑"></v-btn>
+              <v-btn size="x-small" icon="mdi-content-copy" color="grey" variant="text" @click="copyTag(ib.tag)" title="复制 tag"></v-btn>
+              <v-btn size="x-small" icon="mdi-delete" color="error" variant="text" @click="deleteInbound(ib.tag)" title="删除"></v-btn>
+            </v-btn-group>
+          </td>
+        </tr>
+      </tbody>
+    </v-table>
+  </v-card>
+
+  <!-- 空状态 -->
+  <v-alert type="info" variant="tonal" v-else class="mt-4">
+    暂无 Inbound 配置。
+    <template #append>
+      <v-btn size="small" variant="tonal" @click="syncXboard">从 xboard 同步</v-btn>
+    </template>
+  </v-alert>
+
+  <!-- ========== 编辑对话框 ========== -->
+  <v-dialog v-model="dialog" fullscreen transition="dialog-bottom-transition">
+    <v-card>
+      <v-toolbar color="primary" dark>
+        <v-btn icon @click="dialog = false"><v-icon>mdi-close</v-icon></v-btn>
+        <v-toolbar-title>{{"{{"}}editMode === 'create' ? '新建 Inbound' : '编辑 Inbound'{{"}}"}}</v-toolbar-title>
+        <v-toolbar-items>
+          <v-btn variant="text" @click="dialog = false">取消</v-btn>
+          <v-btn variant="text" @click="switchMode('out')" class="ml-2">
+            切换: Outbound
+          </v-btn>
+        </v-toolbar-items>
+      </v-toolbar>
+
+      <v-card-text class="pa-4">
+        <!-- Tab: 基础 | 高级 -->
+        <v-tabs v-model="tab" class="mb-4">
+          <v-tab value="basic">基础协议</v-tab>
+          <v-tab value="advanced">高级设置</v-tab>
+        </v-tabs>
+
+        <v-window v-model="tab">
+          <!-- === 基础协议 Tab === -->
+          <v-window-item value="basic">
+            <v-card>
+              <v-card-text>
+                <!-- 协议类型 -->
+                <v-row>
+                  <v-col cols="12" sm="4">
+                    <v-select v-model="form.type" :items="inProtocols" label="协议类型" @update:model-value="onTypeChange"></v-select>
+                  </v-col>
+                  <v-col cols="12" sm="4">
+                    <v-text-field v-model="form.tag" label="Tag" hide-details></v-text-field>
+                  </v-col>
+                  <v-col cols="12" sm="4">
+                    <v-text-field v-model="form.listen" label="监听地址" placeholder="0.0.0.0" hide-details></v-text-field>
+                  </v-col>
+                  <v-col cols="12" sm="4">
+                    <v-text-field v-model.number="form.listen_port" label="端口" type="number" min="1" max="65535" hide-details></v-text-field>
+                  </v-col>
+                </v-row>
+
+                <!-- VLESS -->
+                <v-row v-if="form.type === 'vless'">
+                  <v-col cols="12" sm="8">
+                    <v-text-field v-model="form.uuid" label="UUID" hide-details></v-text-field>
+                  </v-col>
+                  <v-col cols="12" sm="4">
+                    <v-select v-model="form.flow" :items="['xtls-rprx-vision','xtls-rprx-vision-udp443','']" label="Flow"></v-select>
+                  </v-col>
+                </v-row>
+
+                <!-- VMess -->
+                <v-row v-if="form.type === 'vmess'">
+                  <v-col cols="12" sm="8">
+                    <v-text-field v-model="form.uuid" label="UUID" hide-details></v-text-field>
+                  </v-col>
+                  <v-col cols="12" sm="4">
+                    <v-text-field v-model.number="form.alter_id" label="Alter ID" type="number"></v-text-field>
+                  </v-col>
+                </v-row>
+
+                <!-- Trojan -->
+                <v-row v-if="form.type === 'trojan'">
+                  <v-col cols="12">
+                    <v-text-field v-model="form.password" label="密码" hide-details></v-text-field>
+                  </v-col>
+                </v-row>
+
+                <!-- Shadowsocks -->
+                <v-row v-if="form.type === 'shadowsocks'">
+                  <v-col cols="12" sm="4">
+                    <v-select v-model="form.method" :items="ssMethods" label="加密方式"></v-select>
+                  </v-col>
+                  <v-col cols="12" sm="8">
+                    <v-text-field v-model="form.password" label="密码" hide-details></v-text-field>
+                  </v-col>
+                </v-row>
+
+                <!-- Hysteria2 -->
+                <v-row v-if="form.type === 'hysteria2'">
+                  <v-col cols="12" sm="4">
+                    <v-text-field v-model="form.password" label="密码" hide-details></v-text-field>
+                  </v-col>
+                  <v-col cols="12" sm="4">
+                    <v-text-field v-model.number="form.up_mbps" label="上行 (Mbps)" type="number"></v-text-field>
+                  </v-col>
+                  <v-col cols="12" sm="4">
+                    <v-text-field v-model.number="form.down_mbps" label="下行 (Mbps)" type="number"></v-text-field>
+                  </v-col>
+                </v-row>
+
+                <!-- TUIC -->
+                <v-row v-if="form.type === 'tuic'">
+                  <v-col cols="12" sm="4"><v-text-field v-model="form.uuid" label="UUID" hide-details></v-text-field></v-col>
+                  <v-col cols="12" sm="4"><v-text-field v-model="form.password" label="密码" hide-details></v-text-field></v-col>
+                  <v-col cols="12" sm="4">
+                    <v-select v-model="form.congestion_control" :items="['bbr','cubic','reno']" label="拥塞控制"></v-select>
+                  </v-col>
+                </v-row>
+              </v-card-text>
+            </v-card>
+          </v-window-item>
+
+          <!-- === 高级设置 Tab === -->
+          <v-window-item value="advanced">
+            <v-card>
+              <v-card-text>
+
+                <!-- TLS -->
+                <div class="text-subtitle-2 mb-2">TLS</div>
+                <v-switch v-model="form.tls.enabled" color="primary" label="启用 TLS" hide-details></v-switch>
+                <template v-if="form.tls && form.tls.enabled">
+                  <v-row class="mt-2">
+                    <v-col cols="12" sm="6"><v-text-field v-model="form.tls.server_name" label="SNI" placeholder="example.com" hide-details></v-text-field></v-col>
+                    <v-col cols="12" sm="6"><v-select v-model="form.tls.alpn" :items="[['h2','http/1.1'],['h2'],['http/1.1']]" label="ALPN" multiple></v-select></v-col>
+                  </v-row>
+
+                  <!-- Reality -->
+                  <v-switch v-model="form.tls.reality.enabled" color="amber" label="Reality" hide-details class="mt-2"></v-switch>
+                  <v-row v-if="form.tls.reality && form.tls.reality.enabled">
+                    <v-col cols="12" sm="6"><v-text-field v-model="form.tls.reality.public_key" label="公钥" hide-details></v-text-field></v-col>
+                    <v-col cols="12" sm="3"><v-text-field v-model="form.tls.reality.short_id" label="短 ID" hide-details></v-text-field></v-col>
+                    <v-col cols="12" sm="3"><v-text-field v-model="form.tls.reality.server_name" label="目标域名 (Dest)" hide-details></v-text-field></v-col>
+                  </v-row>
+
+                  <!-- uTLS -->
+                  <v-switch v-model="form.tls.utls.enabled" color="teal" label="uTLS 指纹" hide-details class="mt-2"></v-switch>
+                  <v-row v-if="form.tls.utls && form.tls.utls.enabled">
+                    <v-col cols="12" sm="6">
+                      <v-select v-model="form.tls.utls.fingerprint" :items="utlsFps" label="浏览器指纹"></v-select>
+                    </v-col>
+                  </v-row>
+                </template>
+
+                <v-divider class="my-4"></v-divider>
+
+                <!-- SS 插件 -->
+                <template v-if="form.type === 'shadowsocks'">
+                  <div class="text-subtitle-2 mb-2">SS 插件</div>
+                  <v-row>
+                    <v-col cols="12" sm="4">
+                      <v-select v-model="ssPlugin" :items="[{title:'无',value:''},'v2ray-plugin','obfs-local']" label="插件"></v-select>
+                    </v-col>
+                    <v-col cols="12" sm="8" v-if="ssPlugin">
+                      <v-text-field v-model="form.plugin_opts" label="插件选项" placeholder="tls;host=example.com" hide-details></v-text-field>
+                    </v-col>
+                  </v-row>
+                  <v-divider class="my-4"></v-divider>
+                </template>
+
+                <!-- Hysteria2 混淆 -->
+                <template v-if="form.type === 'hysteria2'">
+                  <div class="text-subtitle-2 mb-2">Hysteria2 混淆</div>
+                  <v-row>
+                    <v-col cols="12" sm="4">
+                      <v-select v-model="form.obfs.type" :items="[{title:'无',value:''},'salamander','http']" label="混淆类型"></v-select>
+                    </v-col>
+                    <v-col cols="12" sm="8" v-if="form.obfs && form.obfs.type">
+                      <v-text-field v-model="form.obfs.password" label="混淆密码" hide-details></v-text-field>
+                    </v-col>
+                  </v-row>
+                  <v-divider class="my-4"></v-divider>
+                </template>
+
+                <!-- Trojan 回落 -->
+                <template v-if="form.type === 'trojan'">
+                  <div class="text-subtitle-2 mb-2">Trojan 回落</div>
+                  <v-row>
+                    <v-col cols="12">
+                      <v-combobox v-model="form.fallback" label="回落目标（多选）" multiple chips closable-chips hide-details></v-combobox>
+                    </v-col>
+                  </v-row>
+                  <v-divider class="my-4"></v-divider>
+                </template>
+
+                <!-- Mux -->
+                <div class="text-subtitle-2 mb-2">多路复用 (Mux)</div>
+                <v-switch v-model="form.multiplex.enabled" color="primary" label="启用 Mux" hide-details></v-switch>
+                <v-row v-if="form.multiplex && form.multiplex.enabled" class="mt-2">
+                  <v-col cols="12" sm="6"><v-text-field v-model.number="form.multiplex.max_connections" label="最大连接数" type="number"></v-text-field></v-col>
+                  <v-col cols="12" sm="6"><v-text-field v-model.number="form.multiplex.max_streams" label="每连接最大流" type="number"></v-text-field></v-col>
+                </v-row>
+
+                <v-divider class="my-4"></v-divider>
+
+                <!-- TUN -->
+                <div class="text-subtitle-2 mb-2">TUN 透明代理</div>
+                <v-row>
+                  <v-col cols="12" sm="4"><v-select v-model="form.stack" :items="['system','gVisor','mixed']" label="网络栈"></v-select></v-col>
+                  <v-col cols="12" sm="4"><v-text-field v-model.number="form.mtu" label="MTU" type="number" placeholder="9000"></v-text-field></v-col>
+                  <v-col cols="12" sm="2"><v-switch v-model="form.auto_route" color="primary" label="Auto Route"></v-switch></v-col>
+                  <v-col cols="12" sm="2"><v-switch v-model="form.strict_route" color="primary" label="Strict Route"></v-switch></v-col>
+                </v-row>
+
+              </v-card-text>
+            </v-card>
+          </v-window-item>
+        </v-window>
+
+        <!-- 保存 / 取消 -->
+        <div class="d-flex gap-2 mt-4">
+          <v-btn color="primary" size="large" @click="saveInbound" :loading="saving">
+            <v-icon start>mdi-content-save</v-icon>
+            保存
+          </v-btn>
+          <v-btn variant="outlined" size="large" @click="dialog = false">取消</v-btn>
+        </div>
+      </v-card-text>
+    </v-card>
+  </v-dialog>
+
+</div>
+
+<script>
+(function() {
+  const IN_PROTOCOLS = ['vless','vmess','trojan','shadowsocks','hysteria2','tuic','naive','ssh','socks','http','tun','tproxy'];
+  const SS_METHODS = ['none','aes-128-gcm','aes-256-gcm','chacha20-ietf-poly1305','xchacha20-ietf-poly1305'];
+  const UTLS_FPS = ['chrome','firefox','safari','android','edge','random','randomized'];
+
+  const COLORS = {
+    vless:'blue',vmess:'purple',trojan:'red',shadowsocks:'green',
+    hysteria2:'orange',tuic:'teal',naive:'brown',ssh:'grey',
+    socks:'cyan',http:'lime',tun:'amber',tproxy:'deep-orange'
+  };
+
+  new Vue({
+    el: '#inbounds-view',
+    data() { return {
+      inbounds: [],
+      dialog: false,
+      editMode: 'create', // 'create' | 'edit'
+      tab: 'basic',
+      form: freshForm(),
+      saving: false,
+      syncing: false,
+      ssMethods: SS_METHODS,
+      utlsFps: UTLS_FPS,
+      ssPlugin: '',
+      inProtocols: IN_PROTOCOLS.map(p => ({ title: p, value: p })),
+    };},
+    methods: {
+      async load() {
+        try {
+          const res = await fetch('/api/inbounds');
+          const json = await res.json();
+          if (json.success) this.inbounds = json.obj || [];
+        } catch(e) { console.error(e); }
+      },
+      openCreate() {
+        this.editMode = 'create';
+        this.form = freshForm();
+        this.ssPlugin = '';
+        this.tab = 'basic';
+        this.dialog = true;
+      },
+      openEdit(ib) {
+        this.editMode = 'edit';
+        this.form = JSON.parse(JSON.stringify(ib));
+        this.ssPlugin = ib.plugin_opts ? 'v2ray-plugin' : '';
+        this.tab = 'basic';
+        this.dialog = true;
+      },
+      onTypeChange(t) {
+        if (this.editMode === 'create') {
+          this.form = freshForm();
+          this.form.type = t;
+        }
+      },
+      async syncXboard() {
+        this.syncing = true;
+        try {
+          await fetch('/api/xboard/sync', { method:'POST' });
+          await this.load();
+        } finally { this.syncing = false; }
+      },
+      async saveInbound() {
+        if (!this.form.tag) { alert('Tag 不能为空'); return; }
+        this.saving = true;
+        try {
+          const method = this.editMode === 'create' ? 'POST' : 'PUT';
+          const url = this.editMode === 'create' ? '/api/inbounds' : `/api/inbounds/${this.form.tag}`;
+          const res = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(this.form),
+          });
+          const json = await res.json();
+          if (json.success) {
+            this.dialog = false;
+            await this.load();
+          } else { alert(json.msg || '保存失败'); }
+        } finally { this.saving = false; }
+      },
+      async deleteInbound(tag) {
+        if (!confirm(`删除 inbound "${tag}"？`)) return;
+        await fetch(`/api/inbounds/${encodeURIComponent(tag)}`, { method:'DELETE' });
+        await this.load();
+      },
+      copyTag(tag) {
+        navigator.clipboard.writeText(tag).then(() => {});
+      },
+      hasAdvanced(ib) {
+        return (ib.tls && ib.tls.enabled) || ib.plugin_opts ||
+               (ib.obfs && ib.obfs.type) || ib.multiplex;
+      },
+      protoColor(p) { return COLORS[p] || 'grey'; },
+    },
+    mounted() { this.load(); },
+  });
+
+  function freshForm() {
+    return {
+      tag: '', type: 'vless', listen: '0.0.0.0', listen_port: 443,
+      uuid: '', flow: 'xtls-rprx-vision', alter_id: 0,
+      password: '', method: 'aes-256-gcm',
+      up_mbps: 100, down_mbps: 300,
+      congestion_control: 'bbr',
+      tls: { enabled: false, reality:{enabled:false}, utls:{enabled:false} },
+      multiplex: { enabled: false, max_connections: 8 },
+      stack: 'system', mtu: 9000, auto_route: false, strict_route: false,
+      obfs: { type: '' }, plugin_opts: '',
+    };
+  }
+})();
+</script>
+{{end}}
