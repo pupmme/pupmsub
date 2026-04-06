@@ -52,13 +52,23 @@ jobs:
           GOSUMDB: off
         run: |
           go build -mod=mod -ldflags '-w -s' -o pupmsub-${{ matrix.suffix }} .
-        continue-on-error: true
+
+      - name: Check build output
+        run: |
+          if [ -f "pupmsub-${{ matrix.suffix }}" ]; then
+            ls -la pupmsub-${{ matrix.suffix }}
+            file pupmsub-${{ matrix.suffix }}
+          else
+            echo "Build output not found"
+            exit 1
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: pupmsub-${{ matrix.suffix }}
           path: pupmsub-${{ matrix.suffix }}
+          if-no-files-found: error
 
   release:
     needs: build
