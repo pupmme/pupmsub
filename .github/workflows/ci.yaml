@@ -17,7 +17,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.24'
           cache-dependency-path: go.mod
 
       - name: Syntax check (gofmt)
@@ -40,8 +40,8 @@ jobs:
 
       - name: Build (full compile)
         run: |
-          echo "=== go mod download ==="
-          GOSUMDB=off go mod download 2>&1
+          echo "=== go mod tidy ==="
+          GOSUMDB=off GOPROXY=https://proxy.golang.org,direct go mod tidy 2>&1
           echo "=== go build ==="
           GOSUMDB=off go build -v ./... 2>&1
 

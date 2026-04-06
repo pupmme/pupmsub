@@ -15,7 +15,7 @@ import (
 	"github.com/pupmme/pupmsub/service"
 )
 
-//go:embed ./tmpl/*
+//go:embed tmpl
 var tmplFS embed.FS
 
 var tmpl = template.Must(template.ParseFS(tmplFS,
