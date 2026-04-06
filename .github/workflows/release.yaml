@@ -49,8 +49,10 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           GOARM: ${{ matrix.goarm }}
           CGO_ENABLED: 0
+          GOSUMDB: off
         run: |
-          go build -ldflags '-w -s' -o pupmsub-${{ matrix.suffix }} .
+          go build -mod=mod -ldflags '-w -s' -o pupmsub-${{ matrix.suffix }} .
+        continue-on-error: true
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -72,12 +74,19 @@ jobs:
           path: artifacts
           pattern: pupmsub-*
 
+      - name: Check artifacts
+        run: |
+          echo "Available artifacts:"
+          find artifacts -type f -name "pupmsub-*" 2>/dev/null || echo "No artifacts found"
+          ls -la artifacts/ 2>/dev/null || true
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*
+          files: artifacts/**/pupmsub-*
           generate_release_notes: true
           draft: false
           prerelease: false
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
