@@ -23,9 +23,12 @@ jobs:
       - name: Syntax check (gofmt)
         run: |
           # Check formatting (warn only, don't fail)
-          if [ -n "$(gofmt -l .)" ]; then
-            echo "::warning::Formatting issues found (non-blocking):"
-            gofmt -l .
+          set +e
+          FMT_ISSUES=$(gofmt -l .)
+          set -e
+          if [ -n "$FMT_ISSUES" ]; then
+            echo "::warning::Formatting issues found:"
+            echo "$FMT_ISSUES"
           fi
           echo "Syntax check complete"
 
