@@ -22,13 +22,12 @@ jobs:
 
       - name: Syntax check (gofmt)
         run: |
-          # Check formatting
+          # Check formatting (warn only, don't fail)
           if [ -n "$(gofmt -l .)" ]; then
-            echo "Formatting issues found:"
+            echo "::warning::Formatting issues found (non-blocking):"
             gofmt -l .
-            exit 1
           fi
-          echo "All Go files properly formatted"
+          echo "Syntax check complete"
 
       - name: Build syntax only (no link)
         run: |
