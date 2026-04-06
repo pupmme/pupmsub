@@ -5,7 +5,8 @@ import (
 )
 
 // Generator merges xboard inbound skeleton + node advanced settings → sing-box config.
-func GenerateSingboxConfig() map[string]any {
+// xboardInbound may be nil; local inbounds from DB are always merged.
+func GenerateSingboxConfig(xboardInbound *db.InboundBasic) map[string]any {
 	// Start with base structure
 	cfg := map[string]any{
 		"log": map[string]any{
@@ -34,10 +35,10 @@ func GenerateSingboxConfig() map[string]any {
 	}
 
 	// Merge xboard inbound if provided
-	if xboardCfg != nil {
-		inb := xboardInboundToSingbox(xboardCfg)
+	if xboardInbound != nil {
+		inb := xboardInboundToSingbox(xboardInbound)
 		// merge with node advanced settings
-		adv := getInboundAdvanced(xboardCfg.Tag)
+		adv := getInboundAdvanced(xboardInbound.Tag)
 		mergeAdvanced(inb, adv)
 		inbs := cfg["inbounds"].([]map[string]any)
 		inbs = append(inbs, inb)

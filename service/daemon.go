@@ -254,7 +254,7 @@ func (d *XboardDaemon) applyConfig() error {
 			break
 		}
 	}
-	cfg := GenerateSingboxConfig(mainIB)
+	cfg := GenerateSingboxConfig()
 	return GetSingbox().WriteConfig(cfg)
 }
 
