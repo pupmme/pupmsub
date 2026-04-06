@@ -20,11 +20,12 @@ jobs:
           go-version: '1.23'
           cache: true
 
-      - name: Build
+      - name: Build (mod=mod, direct proxy)
         run: |
-          # Skip go.sum checks for unavailable private/unversioned deps
-          # (sagernet/netlink-go, sagernet/gvisor use v0.0.0 pseudo-versions)
-          GOSUMDB=off go build ./... 2>&1
+          set -e
+          # direct proxy bypasses the Go module proxy cache
+          # needed for sagernet pseudo-version deps (v0.0.0-yyyymmddhhmmss-xxxxxxxx)
+          GOSUMDB=off GOPROXY=https://proxy.golang.org,direct go build -mod=mod ./... 2>&1
 
       - name: Vet
         run: go vet ./...
