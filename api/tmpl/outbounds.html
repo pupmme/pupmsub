@@ -1,0 +1,191 @@
+{{define "outbounds"}}
+<div id="outbounds-view" class="pa-4">
+
+  <div class="d-flex align-center mb-4">
+    <h2 class="text-h5 font-weight-bold">出站节点</h2>
+    <v-spacer></v-spacer>
+    <v-btn color="primary" prepend-icon="mdi-plus" @click="openCreate">
+      添加出站
+    </v-btn>
+  </div>
+
+  <v-card v-if="items.length > 0">
+    <v-list lines="two">
+      <v-list-item v-for="ob in items" :key="ob.tag">
+        <template #prepend>
+          <v-chip size="small" :color="protoColor(ob.type)" variant="elevated">{{"{{"}}ob.type{{"}}"}}</v-chip>
+        </template>
+        <v-list-item-title>{{"{{"}}ob.tag{{"}}"}}</v-list-item-title>
+        <v-list-item-subtitle>
+          <span v-if="ob.server">目标: {{"{{"}}ob.server{{"}}"}}</span>
+          <span v-if="ob.address">地址: {{"{{"}}ob.address{{"}}"}}</span>
+          <span v-if="ob.outbounds">节点: {{"{{"}}ob.outbounds.join(', '){{"}}"}}</span>
+          <span v-if="ob.type === 'direct'">直连</span>
+          <span v-if="ob.type === 'block'">拦截</span>
+        </v-list-item-subtitle>
+        <template #append>
+          <v-btn-group density="compact">
+            <v-btn size="x-small" icon="mdi-pencil" color="primary" variant="text" @click="openEdit(ob)"></v-btn>
+            <v-btn size="x-small" icon="mdi-delete" color="error" variant="text" @click="remove(ob.tag)"></v-btn>
+          </v-btn-group>
+        </template>
+      </v-list-item>
+    </v-list>
+  </v-card>
+
+  <v-alert type="info" variant="tonal" v-else>暂无出站节点配置。</v-alert>
+
+  <!-- 编辑对话框 -->
+  <v-dialog v-model="dialog" fullscreen transition="dialog-bottom-transition">
+    <v-card>
+      <v-toolbar color="primary" dark>
+        <v-btn icon @click="dialog=false"><v-icon>mdi-close</v-icon></v-btn>
+        <v-toolbar-title>{{"{{"}}editMode==='create'?'添加出站':'编辑出站'{{"}}"}}</v-toolbar-title>
+      </v-toolbar>
+      <v-card-text class="pa-4">
+        <v-card class="mb-3">
+          <v-card-text>
+            <v-row>
+              <v-col cols="12" sm="6">
+                <v-select v-model="form.type" :items="outProtocols" label="协议类型" @update:model-value="onTypeChange"></v-select>
+              </v-col>
+              <v-col cols="12" sm="6">
+                <v-text-field v-model="form.tag" label="Tag" hide-details></v-text-field>
+              </v-col>
+            </v-row>
+
+            <!-- direct / block -->
+            <v-row v-if="form.type==='direct' || form.type==='block'">
+              <v-col cols="12">
+                <v-alert type="info" variant="tonal" density="compact">
+                  {{"{{"}}form.type==='direct'?'直连出站':'拦截所有出站流量'{{"}}"}}
+                </v-alert>
+              </v-col>
+            </v-row>
+
+            <!-- selector -->
+            <v-row v-if="form.type==='selector'">
+              <v-col cols="12">
+                <v-combobox v-model="form.outbounds" :items="allTags" label="可用出站节点（多选）" multiple chips closable-chips></v-combobox>
+              </v-col>
+            </v-row>
+
+            <!-- urltest -->
+            <v-row v-if="form.type==='urltest'">
+              <v-col cols="12" sm="8">
+                <v-text-field v-model="form.url" label="测速 URL" placeholder="https://www.gstatic.com/generate_204" hide-details></v-text-field>
+              </v-col>
+              <v-col cols="12" sm="4">
+                <v-text-field v-model.number="form.interval" label="间隔(秒)" type="number" placeholder="300" hide-details></v-text-field>
+              </v-col>
+              <v-col cols="12">
+                <v-combobox v-model="form.outbounds" :items="allTags" label="待测节点" multiple chips closable-chips></v-combobox>
+              </v-col>
+            </v-row>
+
+            <!-- VLESS / VMess / Trojan / SS / Hysteria2 / TUIC -->
+            <template v-if="['vless','vmess','trojan','shadowsocks','hysteria2','tuic'].includes(form.type)">
+              <v-row>
+                <v-col cols="12" sm="8"><v-text-field v-model="form.server" label="服务器地址" hide-details></v-text-field></v-col>
+                <v-col cols="12" sm="4"><v-text-field v-model.number="form.server_port" label="端口" type="number" hide-details></v-text-field></v-col>
+              </v-row>
+              <template v-if="form.type==='vless'">
+                <v-row><v-col cols="12" sm="8"><v-text-field v-model="form.uuid" label="UUID" hide-details></v-text-field></v-col>
+                <v-col cols="12" sm="4"><v-select v-model="form.flow" :items="['xtls-rprx-vision','']" label="Flow"></v-select></v-col></v-row>
+              </template>
+              <template v-if="form.type==='vmess'">
+                <v-row><v-col cols="12" sm="8"><v-text-field v-model="form.uuid" label="UUID" hide-details></v-text-field></v-col>
+                <v-col cols="12" sm="4"><v-text-field v-model.number="form.alter_id" label="Alter ID" type="number"></v-text-field></v-col></v-row>
+              </template>
+              <template v-if="form.type==='trojan'">
+                <v-row><v-col cols="12"><v-text-field v-model="form.password" label="密码" hide-details></v-text-field></v-col></v-row>
+              </template>
+              <template v-if="form.type==='shadowsocks'">
+                <v-row><v-col cols="12" sm="4"><v-select v-model="form.method" :items="ssMethods" label="加密方式"></v-select></v-col>
+                <v-col cols="12" sm="8"><v-text-field v-model="form.password" label="密码" hide-details></v-col></v-row>
+              </template>
+              <template v-if="form.type==='hysteria2'">
+                <v-row><v-col cols="12" sm="6"><v-text-field v-model="form.password" label="密码" hide-details></v-col>
+                <v-col cols="12" sm="3"><v-text-field v-model.number="form.up_mbps" label="上行(Mbps)" type="number"></v-col>
+                <v-col cols="12" sm="3"><v-text-field v-model.number="form.down_mbps" label="下行(Mbps)" type="number"></v-col></v-row>
+              </template>
+              <template v-if="form.type==='tuic'">
+                <v-row><v-col cols="12" sm="4"><v-text-field v-model="form.uuid" label="UUID" hide-details></v-col>
+                <v-col cols="12" sm="4"><v-text-field v-model="form.password" label="密码" hide-details></v-col>
+                <v-col cols="12" sm="4"><v-select v-model="form.congestion_control" :items="['bbr','cubic','reno']" label="拥塞控制"></v-col></v-row>
+              </template>
+            </template>
+
+            <!-- WireGuard -->
+            <template v-if="form.type==='wireguard'">
+              <v-row><v-col cols="12" sm="6"><v-text-field v-model="form.private_key" label="私钥" hide-details></v-col>
+              <v-col cols="12" sm="6"><v-text-field v-model="form.mtu" label="MTU" type="number" placeholder="1420"></v-col></v-row>
+              <v-row><v-col cols="12" sm="6"><v-text-field v-model="form.local_address" label="本地地址(CIDR)" placeholder="10.0.0.2/32"></v-col>
+              <v-col cols="12" sm="6"><v-text-field v-model.number="form.peer_port" label="Peer 端口" type="number" placeholder="51820"></v-col></v-row>
+              <v-row>
+                <v-col cols="12">
+                  <div class="text-subtitle-2 mb-2">Peers</div>
+                  <div v-for="(peer,i) in form.peers||[]" :key="i" class="mb-2 pa-2 border rounded">
+                    <v-row><v-col cols="12" sm="6"><v-text-field v-model="peer.endpoint" label="Endpoint" placeholder="wg.example.com:51820" hide-details density="compact"></v-col>
+                    <v-col cols="12" sm="5"><v-text-field v-model="peer.public_key" label="公钥" hide-details density="compact"></v-col>
+                    <v-col cols="12" sm="1"><v-btn icon="mdi-delete" color="error" size="small" variant="text" @click="form.peers.splice(i,1)"></v-btn></v-col></v-row>
+                    <v-row><v-col cols="12"><v-text-field v-model="peer.allowed_ips" label="Allowed IPs" placeholder="0.0.0.0/0" hide-details density="compact"></v-text-field></v-col></v-row>
+                  </div>
+                  <v-btn size="small" variant="tonal" prepend-icon="mdi-plus" @click="(form.peers||(form.peers=[]),form.peers.push({endpoint:'',public_key:'',allowed_ips:'0.0.0.0/0'}))">添加 Peer</v-btn>
+                </v-col>
+              </v-row>
+            </template>
+
+            <!-- Warp -->
+            <template v-if="form.type==='warp'">
+              <v-row><v-col cols="12" sm="6"><v-select v-model="form.mode" :items="['proxy','warp']" label="模式"></v-col>
+              <v-col cols="12" sm="6"><v-text-field v-model="form.license_key" label="License Key" hide-details></v-col></v-row>
+            </template>
+
+            <!-- DNS -->
+            <template v-if="form.type==='dns'">
+              <v-row><v-col cols="12" sm="10"><v-text-field v-model="form.server" label="上游 DNS" placeholder="https://1.1.1.1/dns-query" hide-details></v-col>
+              <v-col cols="12" sm="2"><v-switch v-model="form.detour" color="primary" label="隧道转发"></v-switch></v-col></v-row>
+            </template>
+
+            <!-- ShadowTLS -->
+            <template v-if="form.type==='shadowtls'">
+              <v-row><v-col cols="12" sm="4"><v-select v-model="form.version" :items="[1,3]" label="版本"></v-col>
+              <v-col cols="12" sm="8"><v-text-field v-model="form.password" label="密码" hide-details></v-col></v-row>
+            </template>
+          </v-card-text>
+        </v-card>
+
+        <div class="d-flex gap-2">
+          <v-btn color="primary" size="large" @click="save" :loading="saving">
+            <v-icon start>mdi-content-save</v-icon>保存
+          </v-btn>
+          <v-btn variant="outlined" size="large" @click="dialog=false">取消</v-btn>
+        </div>
+      </v-card-text>
+    </v-card>
+  </v-dialog>
+</div>
+
+<script>
+(function(){
+  const OUT_P = ['direct','block','selector','urltest','vless','vmess','trojan','shadowsocks','hysteria2','tuic','wireguard','warp','dns','shadowtls'];
+  const COLORS = {direct:'green',block:'red',selector:'blue',urltest:'cyan',vless:'blue',vmess:'purple',trojan:'red',shadowsocks:'green',hysteria2:'orange',tuic:'teal',wireguard:'amber',warp:'brown',dns:'grey',shadowtls:'deep-orange'};
+  new Vue({
+    el:'#outbounds-view',
+    data(){return{items:[],dialog:false,editMode:'create',form:{},saving:false,outProtocols:OUT_P.map(p=>({title:p,value:p})),allTags:[],ssMethods:['aes-128-gcm','aes-256-gcm','chacha20-ietf-poly1305']};},
+    methods:{
+      async load(){try{const r=await fetch('/api/outbounds');const j=await r.json();if(j.success)this.items=j.obj||[];}catch(e){console.error(e);}},
+      async loadTags(){try{const r=await fetch('/api/outbounds');const j=await r.json();this.allTags=(j.obj||[]).map(x=>({title:x.tag,value:x.tag}));}catch(e){}},
+      openCreate(){this.editMode='create';this.form={type:'direct',tag:''};this.dialog=true;},
+      openEdit(ob){this.editMode='edit';this.form=JSON.parse(JSON.stringify(ob));this.dialog=true;},
+      onTypeChange(t){if(this.editMode==='create')this.form={type:t,tag:t+'-out-1'};},
+      async save(){if(!this.form.tag){alert('Tag 不能为空');return;}this.saving=true;try{const url=this.editMode==='create'?`/api/outbounds`:`/api/outbounds/${encodeURIComponent(this.form.tag)}`;const r=await fetch(url,{method:this.editMode==='create'?'POST':'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(this.form)});const j=await r.json();if(j.success){this.dialog=false;await this.load();}else{alert(j.msg||'保存失败');}}finally{this.saving=false;}},
+      async remove(tag){if(!confirm(`删除 "${tag}"？`))return;await fetch(`/api/outbounds/${encodeURIComponent(tag)}`,{method:'DELETE'});await this.load();},
+      protoColor(p){return COLORS[p]||'grey';},
+    },
+    async mounted(){await this.load();await this.loadTags();},
+  });
+})();
+</script>
+{{end}}

@@ -1,0 +1,446 @@
+<!-- protocol-engine.html: inbound + outbound 通用协议配置引擎 -->
+<!-- mode: "in" | "out" -->
+<!-- data: current protocol config object -->
+<!-- onsave: callback(saveData) -->
+
+<div id="proto-engine" class="proto-engine">
+
+  <!-- ========== 协议选择器 ========== -->
+  <v-card class="mb-3" subtitle="协议类型">
+    <v-card-text>
+      <v-select
+        v-model="currentProtocol"
+        :items="availableProtocols"
+        label="协议"
+        hide-details
+        @update:model-value="onProtocolChange"
+      ></v-select>
+    </v-card-text>
+  </v-card>
+
+  <!-- ========== 通用基础字段 ========== -->
+  <v-card class="mb-3" subtitle="基础配置">
+    <v-card-text>
+      <v-row>
+
+        <!-- tag -->
+        <v-col cols="12" sm="6" md="4">
+          <v-text-field v-model="data.tag" label="Tag" hide-details></v-text-field>
+        </v-col>
+
+        <!-- listen -->
+        <v-col cols="12" sm="6" md="4">
+          <v-text-field v-model="data.listen" label="监听地址" placeholder="0.0.0.0" hide-details></v-text-field>
+        </v-col>
+
+        <!-- listen_port (inbound only) -->
+        <v-col cols="12" sm="6" md="4" v-if="mode === 'in'">
+          <v-text-field v-model.number="data.listen_port" label="端口" type="number" min="1" max="65535" hide-details></v-text-field>
+        </v-col>
+
+        <!-- ===================== 入站协议专属基础字段 ===================== -->
+
+        <!-- VLESS: uuid + flow -->
+        <template v-if="currentProtocol === 'vless'">
+          <v-col cols="12" sm="8">
+            <v-text-field v-model="data.uuid" label="UUID" hide-details></v-text-field>
+          </v-col>
+          <v-col cols="12" sm="4">
+            <v-select v-model="data.flow" :items="['xtls-rprx-vision','xtls-rprx-vision-udp443','']" label="Flow" hide-details></v-select>
+          </v-col>
+        </template>
+
+        <!-- VMess: uuid + alterId -->
+        <template v-if="currentProtocol === 'vmess'">
+          <v-col cols="12" sm="8">
+            <v-text-field v-model="data.uuid" label="UUID" hide-details></v-text-field>
+          </v-col>
+          <v-col cols="12" sm="4">
+            <v-text-field v-model.number="data.alter_id" label="Alter ID" type="number" min="0" hide-details></v-text-field>
+          </v-col>
+        </template>
+
+        <!-- Trojan: password -->
+        <template v-if="currentProtocol === 'trojan'">
+          <v-col cols="12">
+            <v-text-field v-model="data.password" label="密码" hide-details></v-text-field>
+          </v-col>
+        </template>
+
+        <!-- Shadowsocks: method + password -->
+        <template v-if="currentProtocol === 'shadowsocks'">
+          <v-col cols="12" sm="4">
+            <v-select v-model="data.method" :items="ssMethods" label="加密方式" hide-details></v-select>
+          </v-col>
+          <v-col cols="12" sm="8">
+            <v-text-field v-model="data.password" label="密码" hide-details></v-text-field>
+          </v-col>
+        </template>
+
+        <!-- Hysteria2: password + bandwidth -->
+        <template v-if="currentProtocol === 'hysteria2'">
+          <v-col cols="12" sm="6">
+            <v-text-field v-model="data.password" label="密码" hide-details></v-text-field>
+          </v-col>
+          <v-col cols="12" sm="3">
+            <v-text-field v-model.number="data.up_mbps" label="上行带宽 (Mbps)" type="number" min="1" hide-details></v-text-field>
+          </v-col>
+          <v-col cols="12" sm="3">
+            <v-text-field v-model.number="data.down_mbps" label="下行带宽 (Mbps)" type="number" min="1" hide-details></v-text-field>
+          </v-col>
+        </template>
+
+        <!-- TUIC: uuid + password + congestion -->
+        <template v-if="currentProtocol === 'tuic'">
+          <v-col cols="12" sm="4">
+            <v-text-field v-model="data.uuid" label="UUID" hide-details></v-text-field>
+          </v-col>
+          <v-col cols="12" sm="4">
+            <v-text-field v-model="data.password" label="密码" hide-details></v-text-field>
+          </v-col>
+          <v-col cols="12" sm="4">
+            <v-select v-model="data.congestion_control" :items="['bbr','cubic','reno']" label="拥塞控制" hide-details></v-select>
+          </v-col>
+        </template>
+
+        <!-- Naive: username + password -->
+        <template v-if="currentProtocol === 'naive'">
+          <v-col cols="12" sm="6">
+            <v-text-field v-model="data.username" label="用户名" hide-details></v-text-field>
+          </v-col>
+          <v-col cols="12" sm="6">
+            <v-text-field v-model="data.password" label="密码" hide-details></v-text-field>
+          </v-col>
+        </template>
+
+        <!-- SSH: username + auth -->
+        <template v-if="currentProtocol === 'ssh'">
+          <v-col cols="12" sm="4">
+            <v-text-field v-model="data.username" label="用户名" hide-details></v-text-field>
+          </v-col>
+          <v-col cols="12" sm="4">
+            <v-select v-model="data.auth" :items="['password','private_key']" label="认证方式" hide-details></v-select>
+          </v-col>
+          <v-col cols="12" sm="4" v-if="data.auth === 'password'">
+            <v-text-field v-model="data.password" label="密码" hide-details></v-text-field>
+          </v-col>
+          <v-col cols="12" sm="8" v-if="data.auth === 'private_key'">
+            <v-textarea v-model="data.private_key" label="私钥 (PEM)" hide-details rows="3"></v-textarea>
+          </v-col>
+        </template>
+
+        <!-- WireGuard: privateKey + peers -->
+        <template v-if="currentProtocol === 'wireguard'">
+          <v-col cols="12" sm="6">
+            <v-text-field v-model="data.private_key" label="私钥" hide-details></v-text-field>
+          </v-col>
+          <v-col cols="12" sm="6">
+            <v-text-field v-model.number="data.mtu" label="MTU" type="number" placeholder="1420" hide-details></v-text-field>
+          </v-col>
+          <v-col cols="12" sm="6">
+            <v-text-field v-model="data.local_address" label="本地地址 (CIDR)" placeholder="10.0.0.2/32" hide-details></v-text-field>
+          </v-col>
+          <v-col cols="12" sm="6">
+            <v-text-field v-model.number="data.peer_port" label="Peer 端口" type="number" placeholder="51820" hide-details></v-text-field>
+          </v-col>
+        </template>
+
+        <!-- DNS: listen + server -->
+        <template v-if="currentProtocol === 'dns'">
+          <v-col cols="12" sm="8">
+            <v-text-field v-model="data.server" label="上游 DNS 服务器" placeholder="https://1.1.1.1/dns-query" hide-details></v-text-field>
+          </v-col>
+          <v-col cols="12" sm="4">
+            <v-switch v-model="data.detour" color="primary" label="隧道转发" hide-details></v-switch>
+          </v-col>
+        </template>
+
+        <!-- Selector: outbound_tags -->
+        <template v-if="currentProtocol === 'selector'">
+          <v-col cols="12">
+            <v-combobox
+              v-model="data.outbounds"
+              :items="allOutboundTags"
+              label="可用出站节点（多选）"
+              multiple
+              chips
+              closable-chips
+              hide-details
+            ></v-combobox>
+          </v-col>
+        </template>
+
+        <!-- URLTest: test_url + interval -->
+        <template v-if="currentProtocol === 'urltest'">
+          <v-col cols="12" sm="8">
+            <v-text-field v-model="data.url" label="测速 URL" placeholder="https://www.gstatic.com/generate_204" hide-details></v-text-field>
+          </v-col>
+          <v-col cols="12" sm="4">
+            <v-text-field v-model.number="data.interval" label="测速间隔 (秒)" type="number" min="30" placeholder="300" hide-details></v-text-field>
+          </v-col>
+        </template>
+
+        <!-- ===================== 出站协议专属基础字段 ===================== -->
+
+        <!-- Warp: mode -->
+        <template v-if="currentProtocol === 'warp'">
+          <v-col cols="12" sm="6">
+            <v-select v-model="data.mode" :items="['proxy','warp']" label="模式" hide-details></v-select>
+          </v-col>
+          <v-col cols="12" sm="6">
+            <v-text-field v-model="data.license_key" label="License Key" hide-details></v-text-field>
+          </v-col>
+        </template>
+
+        <!-- TProxy: network + target -->
+        <template v-if="currentProtocol === 'tproxy'">
+          <v-col cols="12" sm="4">
+            <v-select v-model="data.network" :items="['tcp','udp','tcp,udp']" label="网络" hide-details></v-select>
+          </v-col>
+          <v-col cols="12" sm="8">
+            <v-text-field v-model="data.target" label="目标地址" placeholder="127.0.0.1:8080" hide-details></v-text-field>
+          </v-col>
+        </template>
+
+        <!-- ShadowTLS: version + password -->
+        <template v-if="currentProtocol === 'shadowtls'">
+          <v-col cols="12" sm="4">
+            <v-select v-model="data.version" :items="[1,3]" label="版本" hide-details></v-select>
+          </v-col>
+          <v-col cols="12" sm="8">
+            <v-text-field v-model="data.password" label="密码" hide-details></v-text-field>
+          </v-col>
+        </template>
+
+      </v-row>
+    </v-card-text>
+  </v-card>
+
+  <!-- ========== TLS & Reality（入站 VLESS/Trojan）========== -->
+  <v-card class="mb-3" subtitle="TLS" v-if="tlsAvailable">
+    <v-card-text>
+      <v-row>
+        <v-col cols="12" sm="4">
+          <v-select v-model="data.tls.enabled" :items="[{title:'关闭',value:false},{title:'启用',value:true}]" label="TLS" hide-details></v-select>
+        </v-col>
+
+        <template v-if="data.tls && data.tls.enabled">
+          <v-col cols="12" sm="8">
+            <v-text-field v-model="data.tls.server_name" label="SNI" placeholder="example.com" hide-details></v-text-field>
+          </v-col>
+          <v-col cols="12" sm="6">
+            <v-select v-model="data.tls.alpn" :items="[['h2','http/1.1'],['h2'],['http/1.1']]" label="ALPN" multiple hide-details></v-select>
+          </v-col>
+
+          <!-- Reality -->
+          <v-col cols="12" class="mt-2">
+            <v-divider class="mb-2"></v-divider>
+            <v-switch v-model="data.tls.reality.enabled" color="primary" label="启用 Reality" hide-details></v-switch>
+          </v-col>
+          <template v-if="data.tls && data.tls.reality && data.tls.reality.enabled">
+            <v-col cols="12" sm="6">
+              <v-text-field v-model="data.tls.reality.public_key" label="公钥 (Public Key)" hide-details></v-text-field>
+            </v-col>
+            <v-col cols="12" sm="6">
+              <v-text-field v-model="data.tls.reality.short_id" label="短 ID" placeholder="8 字符" hide-details></v-text-field>
+            </v-col>
+            <v-col cols="12" sm="8">
+              <v-text-field v-model="data.tls.reality.server_name" label="目标域名 (Dest)" placeholder="www.microsoft.com" hide-details></v-text-field>
+            </v-col>
+          </template>
+
+          <!-- uTLS -->
+          <v-col cols="12" class="mt-2">
+            <v-divider class="mb-2"></v-divider>
+            <v-switch v-model="data.tls.utls.enabled" color="primary" label="启用 uTLS 指纹" hide-details></v-switch>
+          </v-col>
+          <v-col cols="12" sm="6" v-if="data.tls && data.tls.utls && data.tls.utls.enabled">
+            <v-select v-model="data.tls.utls.fingerprint" :items="utlsFingerprints" label="浏览器指纹" hide-details></v-select>
+          </v-col>
+        </template>
+      </v-row>
+    </v-card-text>
+  </v-card>
+
+  <!-- ========== Shadowsocks Plugin（入站 SS）========== -->
+  <v-card class="mb-3" subtitle="Shadowsocks 插件" v-if="currentProtocol === 'shadowsocks'">
+    <v-card-text>
+      <v-row>
+        <v-col cols="12" sm="6">
+          <v-select v-model="ssPlugin" :items="[{title:'无',value:''},'v2ray-plugin','obfs-local']" label="插件" hide-details></v-select>
+        </v-col>
+        <v-col cols="12" sm="6" v-if="ssPlugin">
+          <v-text-field v-model="data.plugin_opts" label="插件选项" placeholder="tls;host=example.com" hide-details></v-text-field>
+        </v-col>
+      </v-row>
+    </v-card-text>
+  </v-card>
+
+  <!-- ========== Hysteria2 Obfs（入站 Hysteria2）========== -->
+  <v-card class="mb-3" subtitle="Hysteria2 混淆" v-if="currentProtocol === 'hysteria2'">
+    <v-card-text>
+      <v-row>
+        <v-col cols="12" sm="4">
+          <v-select v-model="data.obfs.type" :items="[{title:'无',value:''},'salamander','http']" label="混淆类型" hide-details></v-select>
+        </v-col>
+        <v-col cols="12" sm="8" v-if="data.obfs && data.obfs.type">
+          <v-text-field v-model="data.obfs.password" label="混淆密码" hide-details></v-text-field>
+        </v-col>
+      </v-row>
+    </v-card-text>
+  </v-card>
+
+  <!-- ========== Trojan Fallback（入站 Trojan）========== -->
+  <v-card class="mb-3" subtitle="Trojan 回落" v-if="currentProtocol === 'trojan'">
+    <v-card-text>
+      <v-row>
+        <v-col cols="12">
+          <v-combobox
+            v-model="data.fallback"
+            label="回落目标（多选，按顺序尝试）"
+            multiple chips closable-chips hide-details
+            placeholder="www.example.com"
+          ></v-combobox>
+        </v-col>
+      </v-row>
+    </v-card-text>
+  </v-card>
+
+  <!-- ========== Multiplex（通用）========== -->
+  <v-card class="mb-3" subtitle="多路复用 (Mux)" v-if="muxAvailable">
+    <v-card-text>
+      <v-row>
+        <v-col cols="12" sm="4">
+          <v-switch v-model="data.multiplex.enabled" color="primary" label="启用 Mux" hide-details></v-switch>
+        </v-col>
+        <template v-if="data.multiplex && data.multiplex.enabled">
+          <v-col cols="12" sm="4">
+            <v-text-field v-model.number="data.multiplex.max_connections" label="最大连接数" type="number" min="1" max="100" hide-details></v-text-field>
+          </v-col>
+          <v-col cols="12" sm="4">
+            <v-text-field v-model.number="data.multiplex.max_streams" label="每连接最大流" type="number" min="1" placeholder="8" hide-details></v-text-field>
+          </v-col>
+        </template>
+      </v-row>
+    </v-card-text>
+  </v-card>
+
+  <!-- ========== TUN 透明代理（通用）========== -->
+  <v-card class="mb-3" subtitle="TUN 透明代理" v-if="currentProtocol === 'tun' || currentProtocol === 'tproxy'">
+    <v-card-text>
+      <v-row>
+        <v-col cols="12" sm="4">
+          <v-select v-model="data.stack" :items="['system','gVisor','mixed']" label="网络栈" hide-details></v-select>
+        </v-col>
+        <v-col cols="12" sm="4">
+          <v-text-field v-model.number="data.mtu" label="MTU" type="number" placeholder="9000" hide-details></v-text-field>
+        </v-col>
+        <v-col cols="12" sm="4">
+          <v-switch v-model="data.auto_route" color="primary" label="自动路由" hide-details></v-switch>
+        </v-col>
+        <v-col cols="12" sm="4">
+          <v-switch v-model="data.strict_route" color="primary" label="严格路由" hide-details></v-switch>
+        </v-col>
+      </v-row>
+    </v-card-text>
+  </v-card>
+
+  <!-- ========== WireGuard Peers（WireGuard 出站）========== -->
+  <v-card class="mb-3" subtitle="WireGuard Peer 节点" v-if="currentProtocol === 'wireguard'">
+    <v-card-text>
+      <div v-for="(peer, i) in data.peers" :key="i" class="mb-3 pa-2 border rounded">
+        <v-row>
+          <v-col cols="12" sm="6">
+            <v-text-field v-model="peer.endpoint" label="Endpoint" placeholder="wg.example.com:51820" hide-details></v-text-field>
+          </v-col>
+          <v-col cols="12" sm="5">
+            <v-text-field v-model="peer.public_key" label="公钥" hide-details></v-text-field>
+          </v-col>
+          <v-col cols="12" sm="1">
+            <v-btn icon="mdi-delete" color="error" size="small" variant="text" @click="removePeer(i)"></v-btn>
+          </v-col>
+          <v-col cols="12">
+            <v-text-field v-model="peer.allowed_ips" label="Allowed IPs" placeholder="0.0.0.0/0" hide-details></v-text-field>
+          </v-col>
+        </v-row>
+      </div>
+      <v-btn prepend-icon="mdi-plus" variant="tonal" size="small" @click="addPeer">添加 Peer</v-btn>
+    </v-card-text>
+  </v-card>
+
+  <!-- ========== 保存按钮 ========== -->
+  <v-btn block color="primary" size="large" class="mt-2" @click="save">
+    <v-icon start>mdi-content-save</v-icon>
+    保存配置
+  </v-btn>
+
+</div>
+
+<script>
+// ===== protocol-engine.js =====
+(function() {
+  const IN_PROTOCOLS = [
+    'vless','vmess','trojan','shadowsocks','hysteria2','tuic',
+    'naive','ssh','socks','http','tun','tproxy','direct'
+  ];
+  const OUT_PROTOCOLS = [
+    'direct','block','selector','urltest',
+    'vless','vmess','trojan','shadowsocks','hysteria2','tuic',
+    'wireguard','warp','naive','ssh','dns','shadowtls'
+  ];
+
+  const UTLS = ['chrome','firefox','safari','android','edge','random','randomized'];
+  const SS_METHODS = [
+    'none','aes-128-gcm','aes-256-gcm','chacha20-ietf-poly1305',
+    'xchacha20-ietf-poly1305','2022-blake3-aes-128-gcm','2022-blake3-aes-256-gcm'
+  ];
+
+  function isTLS(p) { return ['vless','trojan','vmess','tuic'].includes(p); }
+  function isMux(p) { return ['vless','vmess','trojan','shadowsocks','tuic'].includes(p); }
+
+  window.initProtoEngine = function(opts) {
+    const { mode, data, allOutboundTags, onsave } = opts;
+    const vm = new Vue({
+      el: '#proto-engine',
+      data() {
+        const proto = data.tag ? data.tag.split('-')[0] : (mode === 'in' ? 'vless' : 'direct');
+        return {
+          mode,
+          data: JSON.parse(JSON.stringify(data || {})),
+          currentProtocol: proto,
+          utlsFingerprints: UTLS,
+          ssMethods: SS_METHODS,
+          ssPlugin: '',
+          allOutboundTags: allOutboundTags || [],
+        };
+      },
+      computed: {
+        availableProtocols() {
+          const list = mode === 'in' ? IN_PROTOCOLS : OUT_PROTOCOLS;
+          return list.map(p => ({ title: p, value: p }));
+        },
+        tlsAvailable() { return isTLS(this.currentProtocol); },
+        muxAvailable() { return isMux(this.currentProtocol); },
+      },
+      methods: {
+        onProtocolChange(p) {
+          this.data = { tag: p + '-1', type: p, listen: '0.0.0.0' };
+          if (isTLS(p)) this.data.tls = { enabled: false, reality: { enabled: false }, utls: { enabled: false } };
+          if (isMux(p)) this.data.multiplex = { enabled: false };
+        },
+        addPeer() {
+          if (!this.data.peers) this.data.peers = [];
+          this.data.peers.push({ endpoint:'', public_key:'', allowed_ips:'0.0.0.0/0' });
+        },
+        removePeer(i) { this.data.peers.splice(i, 1); },
+        save() {
+          if (!this.data.tag) { alert('Tag 不能为空'); return; }
+          this.data.type = this.currentProtocol;
+          onsave && onsave(JSON.parse(JSON.stringify(this.data)));
+        },
+      },
+    });
+    return vm;
+  };
+})();
+</script>

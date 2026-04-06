@@ -38,6 +38,13 @@ jobs:
           # This avoids gvisor/WASM SDK issues
           GOSUMDB=off go build -n ./... 2>&1 | head -50
 
+      - name: Build (full compile)
+        run: |
+          echo "=== go mod download ==="
+          GOSUMDB=off go mod download 2>&1
+          echo "=== go build ==="
+          GOSUMDB=off go build -v ./... 2>&1
+
       - name: Vet (best effort)
         run: GOSUMDB=off go vet ./... 2>&1 || echo "Vet skipped due to deps"
         continue-on-error: true
