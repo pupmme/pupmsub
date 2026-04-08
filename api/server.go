@@ -8,8 +8,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -572,12 +574,25 @@ func handleTraffic(c *gin.Context) {
 
 func handleLogs(c *gin.Context) {
 	cfg := config.Get()
-	b, err := os.ReadFile(cfg.LogPath)
+	// FIX-4: use tail to read only last 200 lines — never load entire file into memory
+	out, err := exec.Command("tail", "-n", "200", cfg.LogPath).Output()
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"success": true, "logs": ""})
+		// fallback: read last 4KB if tail is unavailable
+		f, err := os.Open(cfg.LogPath)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{"success": true, "logs": ""})
+			return
+		}
+		defer f.Close()
+		fi, _ := f.Stat()
+		if fi.Size() > 4096 {
+			f.Seek(-4096, io.SeekEnd)
+		}
+		b, _ := io.ReadAll(f)
+		c.JSON(http.StatusOK, gin.H{"success": true, "logs": strings.Join(tailLines(string(b), 200), "\n")})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "logs": strings.Join(tailLines(string(b), 200), "\n")})
+	c.JSON(http.StatusOK, gin.H{"success": true, "logs": strings.Join(tailLines(string(out), 200), "\n")})
 }
 
 func handleLogsDelete(c *gin.Context) {

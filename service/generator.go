@@ -76,6 +76,31 @@ func xboardInboundToSingbox(ib *db.InboundBasic) map[string]any {
 	if ib.Password != "" {
 		inb["password"] = ib.Password
 	}
+
+	// FIX-1: inject real users from DB so sing-box accepts connections
+	users := db.GetUsers()
+	if len(users) > 0 {
+		var singUsers []map[string]any
+		for _, u := range users {
+			if !u.Enable {
+				continue
+			}
+			mu := map[string]any{"email": u.Email}
+			switch ib.Type {
+			case "vmess", "vless", "trojan":
+				mu["uuid"] = u.UUID
+			case "shadowsocks":
+				mu["password"] = u.UUID // xboard stores password in UUID field
+			case "hysteria", "hysteria2":
+				mu["password"] = u.UUID
+			}
+			singUsers = append(singUsers, mu)
+		}
+		if len(singUsers) > 0 {
+			inb["users"] = singUsers
+		}
+	}
+
 	return inb
 }
 

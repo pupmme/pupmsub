@@ -327,15 +327,21 @@ func (d *XboardDaemon) ApplyUserQuotaChange(userID int64, newLimit int64) error 
 	}
 	db.SetTrafficSnap(snap)
 
-	// FIX: soft-reload via SIGHUP instead of process kill
-	// sing-box reloads config and inbound user limits without dropping existing conns
+	// FIX-3: write new config to disk BEFORE SIGHUP so sing-box loads the updated quota
 	sb := GetSingbox()
-	if sb != nil && sb.IsRunning() && sb.cmd != nil && sb.cmd.Process != nil {
-		_ = sb.cmd.Process.Signal(syscall.SIGHUP)
-		logger.Info("[daemon] user quota updated",
-			zap.Int64("user_id", userID),
-			zap.Int64("new_limit", newLimit),
-			zap.String("reload", "sighup"))
+	if sb != nil && sb.IsRunning() {
+		cfg := GenerateSingboxConfig()
+		if err := sb.WriteConfig(cfg); err != nil {
+			logger.Warn("[daemon] quota config write failed", zap.Error(err))
+		}
+		// soft-reload via SIGHUP — preserves existing connections, picks up new limits
+		if sb.cmd != nil && sb.cmd.Process != nil {
+			_ = sb.cmd.Process.Signal(syscall.SIGHUP)
+			logger.Info("[daemon] user quota updated",
+				zap.Int64("user_id", userID),
+				zap.Int64("new_limit", newLimit),
+				zap.String("reload", "sighup"))
+		}
 	}
 
 	// Invalidate lastTrafficSnap for this user so next pushTraffic() starts fresh

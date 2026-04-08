@@ -791,7 +791,12 @@ createApp({
     function addInbound() { ibEditIdx.value=-1; ibForm.value={tag:'in-'+Date.now(),type:'vless',port:443,listen:'0.0.0.0',uuid:'',password:'',xboard_tag:''}; ibDialog.value=true; }
     function editInbound(item) { ibEditIdx.value=inbounds.value.indexOf(item); ibForm.value={...item}; ibDialog.value=true; }
     async function saveInbound() {
-      await api.post('/inbounds', ibForm.value);
+      // FIX-2: use PUT when editing existing inbound, POST when creating new
+      if (ibEditIdx.value !== -1) {
+        await api.put('/inbounds/'+encodeURIComponent(ibForm.value.tag), ibForm.value);
+      } else {
+        await api.post('/inbounds', ibForm.value);
+      }
       ibDialog.value=false;
       await loadInbounds();
     }
@@ -844,7 +849,13 @@ createApp({
     function addOutbound() { obEditIdx.value=-1; obForm.value={tag:'out-'+Date.now(),type:'vmess',server:'',port:443,uuid:'',password:'',method:'aes-256-gcm'}; obDialog.value=true; }
     function editOutbound(item) { obEditIdx.value=outbounds.value.indexOf(item); obForm.value={...item}; obDialog.value=true; }
     async function saveOutbound() {
-      await api.post('/outbounds/'+encodeURIComponent(obForm.value.tag),obForm.value);
+      const ob = {...obForm.value};
+      // FIX-5: parse selectorStr textarea into selector array
+      if (ob.type === 'selector' && ob.selectorStr) {
+        ob.selector = ob.selectorStr.split('\n').filter(s => s.trim());
+      }
+      // FIX-2: use PUT (outbounds/*tag PUT) instead of POST
+      await api.put('/outbounds/'+encodeURIComponent(ob.tag), ob);
       obDialog.value=false;
       await loadOutbounds();
     }
@@ -855,7 +866,15 @@ createApp({
     async function saveDNS() { await api.put('/dns',dnsForm.value); }
 
     async function loadTLS() { try { const r=await api.get('/tls'); tlsForm.value=r.data.success?r.data.obj:tlsForm.value; } catch(e) {} }
-    async function saveTLS() { await api.put('/tls',tlsForm.value); }
+    async function saveTLS() {
+      const payload = JSON.parse(JSON.stringify(tlsForm.value));
+      // FIX-6: include tlsProvider as acme.provider before saving
+      if (payload.acme && payload.acme.dns_challenge) {
+        payload.acme.providers = payload.acme.providers || {};
+        payload.acme.providers[tlsProvider.value] = {provider: tlsProvider.value};
+      }
+      await api.put('/tls', payload);
+    }
 
     async function loadSettings() { try { const r=await api.get('/settings'); if(r.data.success)settingsForm.value=r.data.obj||{}; } catch(e) {} }
     async function saveSettings() { await api.put('/settings',settingsForm.value); alert('已保存'); }
