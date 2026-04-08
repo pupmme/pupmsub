@@ -7,37 +7,34 @@ import (
 // Generator merges xboard inbound skeleton + node advanced settings → sing-box config.
 // xboardInbound may be nil; local inbounds from DB are always merged.
 func GenerateSingboxConfig(xboardInbound *db.InboundBasic) map[string]any {
-	// Start with base structure
 	cfg := map[string]any{
 		"log": map[string]any{
 			"level": "warn",
 		},
-		"inbounds": []map[string]any{}{},
-		"outbounds": []map[string]any{}{
-			{ "type": "direct",   "tag": "direct" },
-			{ "type": "block",    "tag": "block"  },
-			{ "type": "dns",      "tag": "dns-out" },
+		"inbounds": []map[string]any{},
+		"outbounds": []map[string]any{
+			{"type": "direct", "tag": "direct"},
+			{"type": "block", "tag": "block"},
+			{"type": "dns", "tag": "dns-out"},
 		},
 		"route": map[string]any{
 			"domain_strategy": "prefer_ipv4",
-			"rules": []map[string]any{}{
-				{ "protocol": []string{"bittorrent"}, "outbound": "block" },
-				{ "port":     []int{53},              "outbound": "dns-out" },
+			"rules": []map[string]any{
+				{"protocol": []string{"bittorrent"}, "outbound": "block"},
+				{"port": []int{53}, "outbound": "dns-out"},
 			},
 		},
 		"dns": map[string]any{
-			"servers": []map[string]any{}{
-				{ "tag": "google", "address": "https://8.8.8.8/dns-query", "detour": "direct" },
-				{ "tag": "local", "address": "https://dns.aliyun.com/dns-query", "detour": "direct" },
-				{ "tag": "block", "address": "rcode://success" },
+			"servers": []map[string]any{
+				{"tag": "google", "address": "https://8.8.8.8/dns-query", "detour": "direct"},
+				{"tag": "local", "address": "https://dns.aliyun.com/dns-query", "detour": "direct"},
+				{"tag": "block", "address": "rcode://success"},
 			},
 		},
 	}
 
-	// Merge xboard inbound if provided
 	if xboardInbound != nil {
 		inb := xboardInboundToSingbox(xboardInbound)
-		// merge with node advanced settings
 		adv := getInboundAdvanced(xboardInbound.Tag)
 		mergeAdvanced(inb, adv)
 		inbs := cfg["inbounds"].([]map[string]any)
@@ -45,7 +42,6 @@ func GenerateSingboxConfig(xboardInbound *db.InboundBasic) map[string]any {
 		cfg["inbounds"] = inbs
 	}
 
-	// Merge local inbounds (not from xboard)
 	for _, ib := range db.GetInboundsBasic() {
 		if ib.XboardTag == "" {
 			inb := basicToSingboxInbound(&ib)
@@ -57,14 +53,9 @@ func GenerateSingboxConfig(xboardInbound *db.InboundBasic) map[string]any {
 		}
 	}
 
-	// Merge outbounds
 	mergeOutbounds(cfg)
-
-	// Merge DNS
 	mergeDNS(cfg)
 
-	// Enable experimental stats API so pushTraffic() can query real
-	// inbound/outbound byte counters via the sing-box gRPC interface.
 	cfg["experimental"] = map[string]any{
 		"v2ray_api_access": []string{"127.0.0.1"},
 	}
@@ -109,28 +100,26 @@ func mergeAdvanced(inb map[string]any, adv *db.InboundAdvanced) {
 	inbType, _ := inb["type"].(string)
 
 	// ---- Sniff (sing-box 1.13.6: must be object, not boolean) ----
-	// UDP-friendly inbounds: use sniff object with override_destination
 	if isUDPFriendly(inbType) {
 		inb["sniff"] = map[string]any{
-			"enabled":                  true,
-			"override_destination":     true,
+			"enabled":              true,
+			"override_destination": true,
 		}
 		inb["udp_timeout"] = 300
 		inb["domain_strategy"] = "prefer_ipv4"
 	}
 
-	// ---- Multiplex inbound (per inbound listener multiplexing) ----
+	// ---- Multiplex inbound ----
 	if adv.MultiplexInbound {
 		inb["multiplex"] = map[string]any{
 			"enabled":          true,
-			"max_connections":  8,
-			"padding_only":     false,
+			"max_connections": 8,
+			"padding_only":    false,
 		}
 	}
 
 	// ---- Reality (sing-box 1.13.6: nested in tls.reality, server uses private_key) ----
 	if adv.Reality.Enabled {
-		// Build TLS block; create or reuse existing tls entry
 		tls, ok := inb["tls"].(map[string]any)
 		if !ok {
 			tls = map[string]any{}
@@ -138,16 +127,16 @@ func mergeAdvanced(inb map[string]any, adv *db.InboundAdvanced) {
 		}
 		tls["enabled"] = true
 		tls["reality"] = map[string]any{
-			"enabled":     true,
+			"enabled":    true,
 			"private_key": adv.Reality.PrivateKey,
-			"short_id":    []string{adv.Reality.ShortID},
+			"short_id":   []string{adv.Reality.ShortID},
 		}
 		if adv.Reality.ServerName != "" {
 			tls["server_name"] = adv.Reality.ServerName
 		}
 	}
 
-	// ---- Mux (outbound-side connection multiplexing) ----
+	// ---- Mux ----
 	if adv.Mux.Enabled {
 		inb["multiplex"] = map[string]any{
 			"enabled":          true,
@@ -160,25 +149,30 @@ func mergeAdvanced(inb map[string]any, adv *db.InboundAdvanced) {
 		tun := map[string]any{
 			"enabled": true,
 		}
-		if adv.TUN.InterfaceName != "" { tun["interface_name"] = adv.TUN.InterfaceName }
-		if adv.TUN.Stack != ""        { tun["stack"] = adv.TUN.Stack }
-		if adv.TUN.MTU > 0            { tun["mtu"] = adv.TUN.MTU }
-		if adv.TUN.AutoRoute          { tun["auto_route"] = true }
-		if adv.TUN.StrictRoute        { tun["strict_route"] = true }
-		// sing-box 1.13.6: sniff must be object
+		if adv.TUN.InterfaceName != "" {
+			tun["interface_name"] = adv.TUN.InterfaceName
+		}
+		if adv.TUN.Stack != "" {
+			tun["stack"] = adv.TUN.Stack
+		}
+		if adv.TUN.MTU > 0 {
+			tun["mtu"] = adv.TUN.MTU
+		}
+		if adv.TUN.AutoRoute {
+			tun["auto_route"] = true
+		}
+		if adv.TUN.StrictRoute {
+			tun["strict_route"] = true
+		}
 		tun["sniff"] = map[string]any{
-			"enabled":                  true,
-			"override_destination":     true,
+			"enabled":              true,
+			"override_destination": true,
 		}
 		inb["tun"] = tun
 	}
 
-	// ---- Shadowsocks plugin: removed ----
-	// sing-box 1.13.6 uses built-in obfs, not external plugin field.
-	// The Obfs block below handles Hysteria2 obfs (salamander/http).
-	// Shadowsocks built-in obfs is handled via ObfsConfig below (same mechanism).
-
 	// ---- Obfs (Hysteria2 built-in obfuscation; also Shadowsocks plugin replacement) ----
+	// sing-box 1.13.6 uses built-in obfs fields, not external plugin field.
 	if adv.Obfs.Enabled {
 		obfs := map[string]any{
 			"type": adv.Obfs.Type,
@@ -224,9 +218,9 @@ func mergeOutbounds(cfg map[string]any) {
 
 func outServerToSingbox(ob *db.Outbound) map[string]any {
 	m := map[string]any{
-		"tag":        ob.Tag,
-		"type":       ob.Type,
-		"server":     "",
+		"tag":         ob.Tag,
+		"type":        ob.Type,
+		"server":      "",
 		"server_port": 443,
 	}
 	for _, s := range ob.Servers {
@@ -234,20 +228,22 @@ func outServerToSingbox(ob *db.Outbound) map[string]any {
 			m["server"] = s.Server
 			m["server_port"] = s.Port
 		}
-		if s.UUID != ""     { m["uuid"] = s.UUID }
-		if s.Password != "" { m["password"] = s.Password }
-		if s.Method != ""   { m["method"] = s.Method }
-
-		// hysteria2: uses password + optional obfs
-		// tuic: uses uuid + password + optional congestion_controller
-		// wireguard: uses private_key + peer public_key + optional reserved
-		if s.Protocol != "" { m["protocol"] = s.Protocol }
+		if s.UUID != "" {
+			m["uuid"] = s.UUID
+		}
+		if s.Password != "" {
+			m["password"] = s.Password
+		}
+		if s.Method != "" {
+			m["method"] = s.Method
+		}
+		if s.Protocol != "" {
+			m["protocol"] = s.Protocol
+		}
 	}
 	return m
 }
 
-// isUDPFriendly returns true for inbound types that use UDP for data transport.
-// These types are susceptible to conntrack tuple collision under multi-IP topologies.
 func isUDPFriendly(t string) bool {
 	switch t {
 	case "shadowsocks", "vmess", "vless", "trojan", "hysteria", "hysteria2",
@@ -275,7 +271,7 @@ func mergeDNS(cfg map[string]any) {
 		servers = append(servers, s)
 	}
 	cfg["dns"] = map[string]any{
-		"servers": servers,
+		"servers":  servers,
 		"strategy": dnsCfg.Strategy,
 	}
 }
