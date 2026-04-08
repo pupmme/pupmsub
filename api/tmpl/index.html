@@ -419,6 +419,32 @@
             <v-col cols="3"><v-select v-model="obForm.method" :items="['aes-256-gcm','chacha20-poly1305','2022-blake3-aes-256-gcm']" label="Method" variant="outlined" density="compact"></v-select></v-col>
             <v-col cols="12"><v-text-field v-model="obForm.password" label="Password" variant="outlined" density="compact"></v-text-field></v-col>
           </template>
+          <template v-if="obForm.type==='hysteria2'">
+            <v-col cols="6"><v-text-field v-model="obForm.server" label="Server" variant="outlined" density="compact"></v-text-field></v-col>
+            <v-col cols="3"><v-text-field v-model.number="obForm.port" label="Port" type="number" variant="outlined" density="compact"></v-text-field></v-col>
+            <v-col cols="12"><v-text-field v-model="obForm.password" label="Password" variant="outlined" density="compact"></v-text-field></v-col>
+            <v-col cols="6"><v-select v-model="obForm.obfs_type" :items="['', 'salamander', 'http']" label="Obfs Type" variant="outlined" density="compact"></v-select></v-col>
+            <v-col cols="6"><v-text-field v-if="obForm.obfs_type" v-model="obForm.obfs_password" label="Obfs Password" variant="outlined" density="compact"></v-text-field></v-col>
+            <v-col cols="6"><v-select v-model="obForm.up_mbps" :items="['','10','50','100','250','500','1000']" label="Up Mbps (optional)" variant="outlined" density="compact"></v-select></v-col>
+            <v-col cols="6"><v-select v-model="obForm.down_mbps" :items="['','10','50','100','250','500','1000']" label="Down Mbps (optional)" variant="outlined" density="compact"></v-select></v-col>
+          </template>
+          <template v-if="obForm.type==='tuic'">
+            <v-col cols="6"><v-text-field v-model="obForm.server" label="Server" variant="outlined" density="compact"></v-text-field></v-col>
+            <v-col cols="3"><v-text-field v-model.number="obForm.port" label="Port" type="number" variant="outlined" density="compact"></v-text-field></v-col>
+            <v-col cols="12"><v-text-field v-model="obForm.uuid" label="UUID" variant="outlined" density="compact"></v-text-field></v-col>
+            <v-col cols="12"><v-text-field v-model="obForm.password" label="Password (TUIC token)" variant="outlined" density="compact"></v-text-field></v-col>
+            <v-col cols="6"><v-select v-model="obForm.congestion_controller" :items="['','bbr','cubic','new_reno']" label="Congestion Controller" variant="outlined" density="compact"></v-select></v-col>
+            <v-col cols="6"><v-switch v-model="obForm.udp_relay_mode" label="UDP Relay Mode"></v-switch></v-col>
+          </template>
+          <template v-if="obForm.type==='wireguard'">
+            <v-col cols="6"><v-text-field v-model="obForm.server" label="Server (endpoint)" variant="outlined" density="compact"></v-text-field></v-col>
+            <v-col cols="3"><v-text-field v-model.number="obForm.port" label="Port" type="number" variant="outlined" density="compact"></v-text-field></v-col>
+            <v-col cols="12"><v-text-field v-model="obForm.private_key" label="Local Private Key" variant="outlined" density="compact"></v-text-field></v-col>
+            <v-col cols="12"><v-textarea v-model="obForm.peer_public_keys" label="Peer Public Keys（一行一个）" variant="outlined" density="compact" rows="2" placeholder="一行一个公钥"></v-textarea></v-col>
+            <v-col cols="6"><v-text-field v-model="obForm.local_address" label="Local Address（如 10.0.0.2/32）" variant="outlined" density="compact"></v-text-field></v-col>
+            <v-col cols="6"><v-textarea v-model="obForm.reserved" label="Reserved（可选，三元组如 0,0,0）" variant="outlined" density="compact" rows="1"></v-textarea></v-col>
+            <v-col cols="12"><v-textarea v-model="obForm.mtu" label="MTU（可选，默认 1280）" variant="outlined" density="compact" rows="1"></v-textarea></v-col>
+          </template>
           <template v-if="obForm.type==='selector'">
             <v-col cols="12"><v-textarea v-model="obForm.selectorStr" label="Outbounds（一行一个）" variant="outlined" density="compact" rows="4"></v-textarea></v-col>
           </template>
@@ -572,10 +598,15 @@
       <v-btn color="primary" size="small" @click="endpoints.push('');saveEndpoints()"><v-icon>mdi-plus</v-icon> 新增</v-btn>
     </v-card-title>
     <v-list>
+      <!-- Endpoints: no blur auto-save; use explicit Save button to avoid race condition -->
       <v-list-item v-for="(ep,i) in endpoints" :key="i">
-        <v-list-item-title><v-text-field v-model="endpoints[i]" variant="plain" density="compact" @blur="saveEndpoints()"></v-text-field></v-list-item-title>
-        <template #append><v-btn icon size="x-small" color="error" @click="endpoints.splice(i,1);saveEndpoints()"><v-icon>mdi-delete</v-icon></v-btn></template>
+        <v-list-item-title><v-text-field v-model="endpoints[i]" variant="plain" density="compact"></v-text-field></v-list-item-title>
+        <template #append><v-btn icon size="x-small" color="error" @click="endpoints.splice(i,1)"><v-icon>mdi-delete</v-icon></v-btn></template>
       </v-list-item>
+      <v-card-actions>
+        <v-spacer></v-spacer>
+        <v-btn color="primary" size="small" @click="saveEndpoints()">保存 Endpoints</v-btn>
+      </v-card-actions>
     </v-list>
   </v-card>
 </div>
@@ -683,7 +714,8 @@ createApp({
     const advForm = ref({tag:'',utls:{enabled:false,fingerprint:'chrome'},reality:{enabled:false,public_key:'',short_id:'',server_name:''},mux:{enabled:false,max_connections:8},tun:{enabled:false,interface_name:'tun0',stack:'system',mtu:9000,auto_route:true,strict_route:false},plugin:{enabled:false,name:'',opts:''},obfs:{enabled:false,type:'salamander',password:''}});
 
     const users = ref([]);
-    const userHeaders = [{title:'ID',key:'id'},{title:'Email',key:'email'},{title:'Enable',key:'enable'}];
+    const userHeaders = [{title:'ID',key:'id'},{title:'Email',key:'email'},{title:'Enable',key:'enable'},{title:'上传(Up)',key:'up',formatter:fmtBytes},{title:'下载(Down)',key:'down',formatter:fmtBytes},{title:'额度(Total)',key:'total',formatter:fmtBytes}];
+    function fmtBytes(v){if(v==null||v==='')return '-';if(typeof v==='string')v=parseInt(v);if(isNaN(v))return v;const units=['B','KB','MB','GB','TB'];let u=0;while(v>=1024&&u<units.length-1){v/=1024;u++;}return v.toFixed(v>=100?0:1)+' '+units[u];}
 
     const rules = ref([]);
     const ruleHeaders = [{title:'Type',key:'type'},{title:'Domain',key:'domain'},{title:'Outbound',key:'outbound'},{title:'',key:'actions',sortable:false}];
@@ -764,7 +796,24 @@ createApp({
       await loadInbounds();
     }
     async function deleteInbound(item) { if(!confirm('删除 "'+item.tag+'"？'))return; await api.delete('/inbounds/'+encodeURIComponent(item.tag)); await loadInbounds(); }
-    async function saveAdvanced() { await api.put('/inbounds/advanced',[advForm.value]); }
+    // saveAdvanced: maintain full Advanced list, update only current tag
+    async function saveAdvanced() {
+      const all = db.GetInboundsAdv();
+      const idx = all.findIndex(a => a.tag === advForm.value.tag);
+      if (idx >= 0) all[idx] = JSON.parse(JSON.stringify(advForm.value));
+      else all.push(JSON.parse(JSON.stringify(advForm.value)));
+      await api.put('/inbounds/advanced', all);
+    }
+    function db_GetInboundsAdv(){ return inbounds.value.map(i=>{const a=inboundsAdvCache[i.tag];return a||{tag:i.tag,utls:{enabled:false,fingerprint:'chrome'},reality:{enabled:false,private_key:'',short_id:'',server_name:''},mux:{enabled:false,max_connections:8},tun:{enabled:false,interface_name:'tun0',stack:'system',mtu:9000,auto_route:true,strict_route:false},obfs:{enabled:false,type:'salamander',password:''}};}); }
+    const inboundsAdvCache = ref({});
+    function loadAdvCache(){
+      inboundsAdvCache.value={};
+      for(const i of inbounds.value){
+        const a=db_GetInboundsAdv().find(x=>x.tag===i.tag);
+        if(a)inboundsAdvCache.value[i.tag]=a;
+        else inboundsAdvCache.value[i.tag]={tag:i.tag,utls:{enabled:false,fingerprint:'chrome'},reality:{enabled:false,private_key:'',short_id:'',server_name:''},mux:{enabled:false,max_connections:8},tun:{enabled:false,interface_name:'tun0',stack:'system',mtu:9000,auto_route:true,strict_route:false},obfs:{enabled:false,type:'salamander',password:''}};
+      }
+    }
 
     async function loadUsers() { try { const r=await api.get('/users'); users.value=r.data.success?r.data.obj:[]; } catch(e) {} }
 

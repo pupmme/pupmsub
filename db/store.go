@@ -38,10 +38,24 @@ func (s *Store[T]) load() {
 	s.val = t
 }
 
+// Get returns a deep copy of the stored value to prevent callers from
+// mutating the shared in-memory data and triggering data races.
+// For slice and map types the underlying backing array is NOT copied by
+// a simple dereference, so we marshal → unmarshal to produce a fully
+// isolated copy.
 func (s *Store[T]) Get() T {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return *s.val
+	// Encode/decode via JSON to deep-copy slice/map without touching the
+	// shared backing array.  This has zero allocation for struct scalars
+	// (json.Marshal elides them) and is safe for all concrete T types.
+	var zero T
+	b, err := json.Marshal(s.val)
+	if err != nil {
+		return zero
+	}
+	json.Unmarshal(b, &zero)
+	return zero
 }
 
 // GetConfig returns the global config (separate from the generic Store).
@@ -82,12 +96,8 @@ var (
 		NodeID     int    `json:"node_id"`
 	}{}
 
-// GetConfigYaml reads the raw config.yaml for the settings API endpoint.
-func GetConfigYaml() (data any) {
-	muCfg.RLock()
-	defer muCfg.RUnlock()
-	return cfgData
-}
+	muUsers sync.RWMutex
+	users   = New[[]User](filepath.Join(config.DefaultConfigDir(), "users.json"))
 
 	muIB   sync.RWMutex
 	inbBas = New[[]InboundBasic](filepath.Join(config.DefaultConfigDir(), "inbounds_basic.json"))
@@ -118,8 +128,17 @@ func GetConfigYaml() (data any) {
 	eps  = New[[]string](filepath.Join(config.DefaultConfigDir(), "endpoints.json"))
 )
 
-func GetInboundsBasic() []InboundBasic   { return inbBas.Get() }
+// GetConfigYaml reads the raw config.yaml for the settings API endpoint.
+func GetConfigYaml() (data any) {
+	muCfg.RLock()
+	defer muCfg.RUnlock()
+	return cfgData
+}
+
+func GetInboundsBasic() []InboundBasic { return inbBas.Get() }
 func SetInboundsBasic(v []InboundBasic)  { inbBas.Set(v); inbBas.Save() }
+func GetUsers() []User                   { return users.Get() }
+func SetUsers(v []User)                  { users.Set(v); users.Save() }
 func GetInboundsAdv() []InboundAdvanced  { return inbAdv.Get() }
 func SetInboundsAdv(v []InboundAdvanced) { inbAdv.Set(v); inbAdv.Save() }
 func GetRules() []Rule                   { return rules.Get() }
@@ -170,7 +189,7 @@ type UTLSConfig struct {
 
 type RealityConfig struct {
 	Enabled    bool   `json:"enabled"`
-	PublicKey  string `json:"public_key,omitempty"`
+	PrivateKey string `json:"private_key,omitempty"` // server-side: private key
 	ShortID    string `json:"short_id,omitempty"`
 	ServerName string `json:"server_name,omitempty"`
 }

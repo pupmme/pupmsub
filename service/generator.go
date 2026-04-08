@@ -27,7 +27,7 @@ func GenerateSingboxConfig(xboardInbound *db.InboundBasic) map[string]any {
 		},
 		"dns": map[string]any{
 			"servers": []map[string]any{}{
-				{ "tag": "google", "address": "https://8.8.8.8/dns-query", "detour": "proxy" },
+				{ "tag": "google", "address": "https://8.8.8.8/dns-query", "detour": "direct" },
 				{ "tag": "local", "address": "https://dns.aliyun.com/dns-query", "detour": "direct" },
 				{ "tag": "block", "address": "rcode://success" },
 			},
@@ -62,6 +62,12 @@ func GenerateSingboxConfig(xboardInbound *db.InboundBasic) map[string]any {
 
 	// Merge DNS
 	mergeDNS(cfg)
+
+	// Enable experimental stats API so pushTraffic() can query real
+	// inbound/outbound byte counters via the sing-box gRPC interface.
+	cfg["experimental"] = map[string]any{
+		"v2ray_api_access": []string{"127.0.0.1"},
+	}
 
 	return cfg
 }
@@ -100,90 +106,79 @@ func mergeAdvanced(inb map[string]any, adv *db.InboundAdvanced) {
 		return
 	}
 
-	// ---- UDP session isolation (Fix: UDP tuple collision under multi-IP topology) ----
-	// The root cause: when multiple outbound targets share a single internal IPv4
-	// while inbound is scattered across multiple public IPv4s, conntrack fails to
-	// demux returning UDP packets — causing concurrent map read/write panics or
-	// cross-user routing. Fix: force deterministic 5-tuple resolution on all
-	// UDP-friendly inbound types.
 	inbType, _ := inb["type"].(string)
+
+	// ---- Sniff (sing-box 1.13.6: must be object, not boolean) ----
+	// UDP-friendly inbounds: use sniff object with override_destination
 	if isUDPFriendly(inbType) {
-		// sniff_override_destination: resolve destination before routing to prevent
-		// conntrack tuple collision when multiple public IPs share a single outbound
-		inb["sniff_override_destination"] = true
-		// sniff: always on for UDP to ensure packet identity is preserved
-		inb["sniff"] = true
-		// udp_timeout: cap UDP session lifetime; prevents stale entries from piling up
-		// in the conntrack table when multi-IP topology causes delayed responses
+		inb["sniff"] = map[string]any{
+			"enabled":                  true,
+			"override_destination":     true,
+		}
 		inb["udp_timeout"] = 300
-		// domain_strategy: use ipv4-only for UDP to avoid IPv6 path instability
 		inb["domain_strategy"] = "prefer_ipv4"
 	}
-	// multiplex_inbound: for Shadowsocks (and other mux-capable protocols),
-	// enables in-band connection multiplexing per inbound listener.
-	// This provides user-level logical isolation within a single shared port,
-	// preventing the "8 SS ports competing for UDP" failure scenario.
+
+	// ---- Multiplex inbound (per inbound listener multiplexing) ----
 	if adv.MultiplexInbound {
 		inb["multiplex"] = map[string]any{
-			"enabled":       true,
-			"max_connections": 8,
-			"padding_only":   false,
+			"enabled":          true,
+			"max_connections":  8,
+			"padding_only":     false,
 		}
 	}
 
-	// uTLS fingerprint
-	if adv.UTLS.Enabled {
-		utls := map[string]any{"enabled": true}
-		if adv.UTLS.Fingerprint != "" {
-			utls["fingerprint"] = adv.UTLS.Fingerprint
-		}
-		inb["fingerprint"] = adv.UTLS.Fingerprint
-	}
-
-	// Reality
+	// ---- Reality (sing-box 1.13.6: nested in tls.reality, server uses private_key) ----
 	if adv.Reality.Enabled {
-		inb["reality"] = map[string]any{
-			"enabled":    true,
-			"public_key": adv.Reality.PublicKey,
-			"short_id":   adv.Reality.ShortID,
-			"server_name": adv.Reality.ServerName,
+		// Build TLS block; create or reuse existing tls entry
+		tls, ok := inb["tls"].(map[string]any)
+		if !ok {
+			tls = map[string]any{}
+			inb["tls"] = tls
+		}
+		tls["enabled"] = true
+		tls["reality"] = map[string]any{
+			"enabled":     true,
+			"private_key": adv.Reality.PrivateKey,
+			"short_id":    []string{adv.Reality.ShortID},
+		}
+		if adv.Reality.ServerName != "" {
+			tls["server_name"] = adv.Reality.ServerName
 		}
 	}
 
-	// Mux
+	// ---- Mux (outbound-side connection multiplexing) ----
 	if adv.Mux.Enabled {
 		inb["multiplex"] = map[string]any{
-			"enabled": true,
+			"enabled":          true,
 			"max_connections": adv.Mux.MaxConnections,
 		}
 	}
 
-	// TUN
+	// ---- TUN (transparent proxy) ----
 	if adv.TUN.Enabled {
 		tun := map[string]any{
 			"enabled": true,
 		}
 		if adv.TUN.InterfaceName != "" { tun["interface_name"] = adv.TUN.InterfaceName }
 		if adv.TUN.Stack != ""        { tun["stack"] = adv.TUN.Stack }
-		if adv.TUN.MTU > 0           { tun["mtu"] = adv.TUN.MTU }
-		if adv.TUN.AutoRoute         { tun["auto_route"] = true }
-		if adv.TUN.StrictRoute       { tun["strict_route"] = true }
-		inb["sniff"] = true
-		inb["sniff_override_destination"] = true
+		if adv.TUN.MTU > 0            { tun["mtu"] = adv.TUN.MTU }
+		if adv.TUN.AutoRoute          { tun["auto_route"] = true }
+		if adv.TUN.StrictRoute        { tun["strict_route"] = true }
+		// sing-box 1.13.6: sniff must be object
+		tun["sniff"] = map[string]any{
+			"enabled":                  true,
+			"override_destination":     true,
+		}
+		inb["tun"] = tun
 	}
 
-	// Plugin (Shadowsocks)
-	if adv.Plugin.Enabled && adv.Plugin.Name != "" {
-		if _, ok := inb["plugin"]; !ok {
-			inb["plugin"] = adv.Plugin.Name
-		}
-		if adv.Plugin.Opts != "" {
-			// embed in settings or separate field
-			inb["plugin_opts"] = adv.Plugin.Opts
-		}
-	}
+	// ---- Shadowsocks plugin: removed ----
+	// sing-box 1.13.6 uses built-in obfs, not external plugin field.
+	// The Obfs block below handles Hysteria2 obfs (salamander/http).
+	// Shadowsocks built-in obfs is handled via ObfsConfig below (same mechanism).
 
-	// Obfs (Hysteria2)
+	// ---- Obfs (Hysteria2 built-in obfuscation; also Shadowsocks plugin replacement) ----
 	if adv.Obfs.Enabled {
 		obfs := map[string]any{
 			"type": adv.Obfs.Type,
@@ -229,17 +224,24 @@ func mergeOutbounds(cfg map[string]any) {
 
 func outServerToSingbox(ob *db.Outbound) map[string]any {
 	m := map[string]any{
-		"tag":    ob.Tag,
-		"server": "",
+		"tag":        ob.Tag,
+		"type":       ob.Type,
+		"server":     "",
 		"server_port": 443,
 	}
 	for _, s := range ob.Servers {
-		m["type"] = ob.Type
-		m["server"] = s.Server
-		m["server_port"] = s.Port
+		if s.Server != "" {
+			m["server"] = s.Server
+			m["server_port"] = s.Port
+		}
 		if s.UUID != ""     { m["uuid"] = s.UUID }
 		if s.Password != "" { m["password"] = s.Password }
-		if s.Method != ""    { m["method"] = s.Method }
+		if s.Method != ""   { m["method"] = s.Method }
+
+		// hysteria2: uses password + optional obfs
+		// tuic: uses uuid + password + optional congestion_controller
+		// wireguard: uses private_key + peer public_key + optional reserved
+		if s.Protocol != "" { m["protocol"] = s.Protocol }
 	}
 	return m
 }

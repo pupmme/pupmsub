@@ -131,6 +131,7 @@ func (d *XboardDaemon) doHandshake() error {
 				for i, u := range hs.Users {
 					users[i] = User(u)
 				}
+				db.SetUsers(users)
 				db.SetTrafficSnap(buildSnapFromUsers(users))
 				_ = d.applyConfig()
 			}
@@ -226,11 +227,12 @@ func (d *XboardDaemon) doSync() error {
 	if err != nil {
 		logger.Warn("[daemon] get users", zap.Error(err))
 	} else if len(users) > 0 {
-		dbRules := make([]User, len(users))
+		dbUsers := make([]User, len(users))
 		for i, u := range users {
-			dbRules[i] = User(u)
+			dbUsers[i] = User(u)
 		}
-		db.SetTrafficSnap(buildSnapFromUsers(dbRules))
+		db.SetUsers(dbUsers)
+		db.SetTrafficSnap(buildSnapFromUsers(dbUsers))
 	}
 
 	if err := d.applyConfig(); err != nil {

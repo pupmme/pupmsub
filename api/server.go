@@ -1,11 +1,17 @@
 package api
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
 	"embed"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
 	"html/template"
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -14,6 +20,49 @@ import (
 	"github.com/pupmme/pupmsub/logger"
 	"github.com/pupmme/pupmsub/service"
 )
+
+// ---- Session store & token helpers (package-level) ----
+
+var (
+	// sessions maps the base64-encoded token header → expiry.
+	sessions   = make(map[string]time.Time)
+	sessionsMu sync.RWMutex
+)
+
+// signToken returns HMAC-SHA256 of "tag|expiry|" using the given secret.
+func signToken(tag string, expiry int64, secret []byte) string {
+	h := hmac.New(sha256.New, secret)
+	h.Write([]byte(fmt.Sprintf("%s|%d|", tag, expiry)))
+	return base64.RawURLEncoding.EncodeToString(h.Sum(nil))
+}
+
+// validToken verifies HMAC signature, expiry, and that the token is still live.
+func validToken(token string, secret []byte) bool {
+	parts := strings.SplitN(token, ".", 2)
+	if len(parts) != 2 {
+		return false
+	}
+	h := hmac.New(sha256.New, secret)
+	h.Write([]byte(parts[0] + "."))
+	expected := base64.RawURLEncoding.EncodeToString(h.Sum(nil))
+	if !hmac.Equal([]byte(expected), []byte(parts[1])) {
+		return false
+	}
+	var hdr struct {
+		Tag    string `json:"tag"`
+		Expiry int64  `json:"exp"`
+	}
+	if err := json.Unmarshal([]byte(parts[0]), &hdr); err != nil {
+		return false
+	}
+	if hdr.Expiry < time.Now().Unix() {
+		return false
+	}
+	sessionsMu.RLock()
+	_, ok := sessions[parts[0]]
+	sessionsMu.RUnlock()
+	return ok
+}
 
 //go:embed tmpl
 var tmplFS embed.FS
@@ -50,7 +99,9 @@ func RunServer() {
 	api.Use(func(c *gin.Context) {
 		cfg := config.Get()
 		if cfg.Username != "" && cfg.Password != "" {
-			if _, err := c.Cookie("pupmsub_session"); err != nil {
+			secret := []byte(cfg.Password)
+			cookie, err := c.Cookie("pupmsub_session")
+			if err != nil || !validToken(cookie, secret) {
 				c.JSON(http.StatusUnauthorized, gin.H{"success": false, "msg": "unauthorized"})
 				c.Abort()
 				return
@@ -118,7 +169,16 @@ func handleLogin(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "msg": "invalid credentials"})
 		return
 	}
-	c.SetCookie("pupmsub_session", "1", 3600*24, "/", "", false, true)
+	// Sign a tamper-proof session token: base64(tag={'username','exp'}).HMAC-SHA256
+	expiry := time.Now().Unix() + int64(3600*24)
+	hdr, _ := json.Marshal(map[string]any{"tag": req.Username, "exp": expiry})
+	token := base64.RawURLEncoding.EncodeToString(hdr) + "." + signToken(base64.RawURLEncoding.EncodeToString(hdr), expiry, []byte(cfg.Password))
+
+	sessionsMu.Lock()
+	sessions[base64.RawURLEncoding.EncodeToString(hdr)] = time.Now().Add(24 * time.Hour)
+	sessionsMu.Unlock()
+
+	c.SetCookie("pupmsub_session", token, 3600*24, "/", "", false, true)
 	c.JSON(http.StatusOK, gin.H{"success": true, "msg": "ok"})
 }
 
@@ -245,17 +305,29 @@ func handleInboundsAdvPut(c *gin.Context) {
 
 func handleUsers(c *gin.Context) {
 	snap := db.GetTrafficSnap()
+	allUsers := db.GetUsers()
 	type UserInfo struct {
-		ID    int64  `json:"id"`
-		Email string `json:"email"`
-		Up    int64  `json:"up"`
-		Down  int64  `json:"down"`
+		ID         int64  `json:"id"`
+		Email      string `json:"email"`
+		Enable     bool   `json:"enable"`
+		Up         int64  `json:"up"`
+		Down       int64  `json:"down"`
+		Total      int64  `json:"total"`
+		ExpiryTime int64  `json:"expiry_time"`
 	}
-	users := []UserInfo{}
-	for id, v := range snap {
-		users = append(users, UserInfo{ID: id, Up: v[0], Down: v[1]})
+	result := []UserInfo{}
+	for _, u := range allUsers {
+		result = append(result, UserInfo{
+			ID:    u.ID,
+			Email: u.Email,
+			Enable: u.Enable,
+			Up:    snap[u.ID][0],
+			Down:  snap[u.ID][1],
+			Total: u.Total,
+			ExpiryTime: u.ExpiryTime,
+		})
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "obj": users})
+	c.JSON(http.StatusOK, gin.H{"success": true, "obj": result})
 }
 
 // ============================================================

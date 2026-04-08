@@ -60,12 +60,27 @@ func (s *SingboxService) IsRunning() bool {
 	return err == nil
 }
 
+// stopLocked stops the sing-box process. Caller must hold s.mu.
+func (s *SingboxService) stopLocked() {
+	if s.cmd == nil || s.cmd.Process == nil {
+		return
+	}
+	_ = s.cmd.Process.Signal(syscall.SIGHUP)
+	time.Sleep(2 * time.Second)
+	if s.cmd.Process != nil {
+		_ = s.cmd.Process.Kill()
+	}
+	s.cmd = nil
+	s.running = false
+	logger.Info("sing-box stopped")
+}
+
 func (s *SingboxService) Start() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if s.running {
-		_ = s.Stop()
+		s.stopLocked()
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -106,18 +121,7 @@ func (s *SingboxService) Start() error {
 func (s *SingboxService) Stop() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.cmd == nil || s.cmd.Process == nil {
-		return nil
-	}
-	// graceful: send SIGHUP first, then SIGKILL
-	_ = s.cmd.Process.Signal(syscall.SIGHUP)
-	time.Sleep(2 * time.Second)
-	if s.cmd.Process != nil {
-		_ = s.cmd.Process.Kill()
-	}
-	s.cmd = nil
-	s.running = false
-	logger.Info("sing-box stopped")
+	s.stopLocked()
 	return nil
 }
 
